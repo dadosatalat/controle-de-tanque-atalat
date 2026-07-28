@@ -1227,9 +1227,27 @@ setInterval(function(){ if(isOnline()) processarFila(); }, 25000);
 async function loadMe(){
   var uid = state.session.user.id;
   var res = await sb.from("profiles").select("*").eq("id", uid).maybeSingle();
-  if(res.error || !res.data){ state.me = null; return; }
-  state.me = res.data;
-  state.me.email = state.session.user.email;
+  var meta = state.session.user.user_metadata || {};
+  var defaultName = meta.nome || state.session.user.email.split("@")[0];
+
+  if(res.error || !res.data){
+    state.me = {
+      id: uid,
+      nome: defaultName,
+      usuario: state.session.user.email,
+      papel: "operador",
+      unidade_id: null
+    };
+    try {
+      await sb.from("profiles").upsert(state.me);
+    } catch(e){}
+  } else {
+    state.me = res.data;
+    if(!state.me.papel){
+      state.me.papel = "operador";
+      try { await sb.from("profiles").update({papel: "operador"}).eq("id", uid); } catch(e){}
+    }
+  }
 }
 
 async function loadUnidades(){
@@ -1397,16 +1415,27 @@ app.criarConta = async function(){
   if(invalid) return;
   var res = await sb.auth.signUp({
     email: email, password: senha,
-    options: {data: {nome: nome, usuario: email}}
+    options: {data: {nome: nome, usuario: email, papel: "operador"}}
   });
   if(res.error){
     app.toast("Não foi possível criar a conta: "+res.error.message);
     return;
   }
+  if(res.data && res.data.user){
+    try{
+      await sb.from("profiles").upsert({
+        id: res.data.user.id,
+        nome: nome,
+        usuario: email,
+        papel: "operador",
+        unidade_id: null
+      });
+    }catch(profErr){}
+  }
   if(res.data.session){
-    app.toast("Conta criada com sucesso!");
+    app.toast("Conta criada como Operador de Campo!");
   } else {
-    app.toast("Conta criada! Verifique seu e-mail para confirmar antes de entrar.");
+    app.toast("Conta criada como Operador de Campo! Verifique seu e-mail para confirmar.");
     state.authMode = "login";
     state.view = "login";
     render();
@@ -1451,7 +1480,7 @@ function renderSignup(){
 
   var html = '<div class="auth-wrap">';
   html += '<div class="auth-title">Criar conta</div>';
-  html += '<div class="auth-sub">Depois de criada, um administrador precisa liberar sua unidade e permissão.</div>';
+  html += '<div class="auth-sub">Seu cadastro iniciará como Operador de Campo. O administrador poderá associar sua unidade em Configurações.</div>';
   html += '<div class="field"><label>Nome completo</label><input id="a_nome" placeholder="Seu nome"/></div>';
   html += '<div class="field"><label>E-mail</label><input id="a_email2" type="email" placeholder="voce@exemplo.com"/></div>';
   html += '<div class="field"><label>Senha</label><div class="password-input-wrap"><input id="a_senha2" type="password" placeholder="mínimo 6 caracteres"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'a_senha2\', this)">👁️</button></div></div>';
@@ -1478,9 +1507,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.2.9</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.2.9</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -2703,7 +2732,7 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v1.2.9</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v1.3.0</div>'+
     '<div class="note" style="margin-top:4px;">Atualizado em 28/07/2026 (Layout Responsivo + PWA + Fotos Instantâneas).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
