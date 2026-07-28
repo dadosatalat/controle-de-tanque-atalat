@@ -744,6 +744,12 @@ function mapTankFromDb(row){
     unidade_id: row.unidade_id,
     pendente: false,
     historico: (row.historico || []).map(function(h){
+      var parsedFotos = [];
+      if(Array.isArray(h.fotos)){
+        parsedFotos = h.fotos;
+      } else if(typeof h.fotos === "string"){
+        try { parsedFotos = JSON.parse(h.fotos); } catch(e){ if(h.fotos) parsedFotos = [h.fotos]; }
+      }
       return {
         id: h.id,
         data: h.data,
@@ -751,7 +757,7 @@ function mapTankFromDb(row){
         produtor: h.produtor,
         litros: h.litros,
         desc: h.desc_texto || h.desc || "",
-        fotos: h.fotos || [],
+        fotos: parsedFotos,
         pendente: false
       };
     })
@@ -892,17 +898,35 @@ async function enviarFotosDoRegistro(fotosBase64, unidadeId, tanqueId, histId){
   var keys = Object.keys(fotosBase64||{}).filter(function(k){ return fotosBase64[k]; });
   if(!keys.length) return;
   var urls = {};
+  var fotosArr = [];
   for(var i=0;i<keys.length;i++){
     var k = keys[i];
-    urls[k] = await uploadFotoParaStorage(fotosBase64[k], unidadeId, tanqueId, k);
+    try {
+      urls[k] = await uploadFotoParaStorage(fotosBase64[k], unidadeId, tanqueId, k);
+      fotosArr.push(urls[k]);
+    } catch(err) {
+      console.warn("Upload de foto para storage falhou, usando fallback base64:", err);
+      fotosArr.push(fotosBase64[k]);
+      if(!urls.geral) urls[k] = fotosBase64[k];
+    }
   }
-  var fotosArr = keys.map(function(k){ return urls[k]; });
-  await sb.from("historico").update({fotos: fotosArr}).eq("id", histId);
-  var coverUrl = urls.geral || urls.abrigo || null;
-  if(coverUrl){
-    await sb.from("tanques").update({foto: coverUrl}).eq("id", tanqueId);
+  if(fotosArr.length){
+    await sb.from("historico").update({fotos: fotosArr}).eq("id", histId);
+    var cover = urls.geral || urls.abrigo || urls.plaqueta || fotosArr[0];
+    if(cover){
+      await sb.from("tanques").update({foto: cover}).eq("id", tanqueId);
+    }
   }
 }
+
+app.openPhotoModal = function(src){
+  var modal = document.createElement("div");
+  modal.className = "photo-modal-wrap no-print";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:999;display:flex;align-items:center;justify-content:center;padding:20px;cursor:pointer;";
+  modal.onclick = function(){ modal.remove(); };
+  modal.innerHTML = '<img src="'+src+'" style="max-width:100%;max-height:90vh;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.5);"/>';
+  document.body.appendChild(modal);
+};
 
 function photoSlot(fotos, key, label){
   var src = fotos[key];
@@ -1463,7 +1487,7 @@ function renderDetalhe(){
   document.getElementById("topTitle").textContent = "Série "+t.serie;
   document.getElementById("topSub").textContent = "Patrimônio "+t.patrimonio+" · "+unidadeNome(t.unidade_id);
 
-  var cover = t.foto ? '<img src="'+t.foto+'"/>' : 'Sem foto de capa';
+  var cover = t.foto ? '<img src="'+t.foto+'" onclick="app.openPhotoModal(\''+t.foto+'\')"/>' : 'Sem foto de capa';
   var prod = t.produtor ? fmtProdutorDisplay(t.produtor) : 'Sem produtor (em estoque)';
   var contratoStr = t.contrato_assinado ? '<span style="color:var(--ok);font-weight:700;">Sim (Assinado)</span>' : '<span style="color:var(--warn);font-weight:600;">Não assinado / Pendente</span>';
 
@@ -1520,7 +1544,7 @@ function renderDetalhe(){
         '</div>'+
         '<div class="tl-desc">'+esc(h.desc)+'</div>';
       if(h.fotos && h.fotos.length){
-        html += '<div class="tl-photos">'+h.fotos.map(function(f){return '<img src="'+f+'"/>';}).join('')+'</div>';
+        html += '<div class="tl-photos">'+h.fotos.map(function(f){return '<img src="'+f+'" onclick="app.openPhotoModal(\''+f+'\')"/>';}).join('')+'</div>';
       }
       html += '</div></div>';
     });
@@ -2080,15 +2104,15 @@ function renderEditarTanque(){
   '</select></div>';
   html += '<div class="field"><label>Município</label><input id="e_municipio" value="'+esc(editTankForm.municipio)+'"/></div>';
   html += '<div class="loc-row">'+
-    '<div class="field"><label>Latitude</label><input id="e_lat" type="number" step="any" value="'+esc(String(editTankForm.latitude||""))+'"/></div>'+
-    '<div class="field"><label>Longitude</label><input id="e_lng" type="number" step="any" value="'+esc(String(editTankForm.longitude||""))+'"/></div>'+
-  '</div>';
+    '<div class="field"><label>Latitude</label><input id="e_lat" type="number" step="any" value="'+esc(String(editTankForm.latitude||""))+'"/></div>';
+    '<div class="field"><label>Longitude</label><input id="e_lng" type="number" step="any" value="'+esc(String(editTankForm.longitude||""))+'"/></div>';
+  html += '</div>';
   html += '<button type="button" class="btn btn-loc no-print" onclick="app.usarLocalizacao(\'e_lat\',\'e_lng\')">Usar minha localização atual (GPS)</button>';
 
   html += '<div class="section-title">Foto do tanque</div>';
   var srcFoto = editTankForm.novaFoto || editTankForm.foto;
   var clsFoto = srcFoto ? "photo-slot has-img" : "photo-slot";
-  var innerFoto = srcFoto ? '<img src="'+srcFoto+'"/><span class="label">Alterar foto do tanque</span>' : '<span class="label">+ Adicionar foto do tanque</span>';
+  var innerFoto = srcFoto ? '<img src="'+srcFoto+'" onclick="app.openPhotoModal(\''+srcFoto+'\')"/><span class="label">Alterar foto do tanque</span>' : '<span class="label">+ Adicionar foto do tanque</span>';
   html += '<label class="'+clsFoto+'">'+innerFoto+
     '<input type="file" accept="image/*" capture="environment" onchange="app.onEditTankPhoto(this)"/>'+
   '</label>';
@@ -2154,7 +2178,6 @@ app.salvarEdicaoTanque = async function(){
   };
 
   if(editTankForm.novaFoto){
-    if(isOnline() && !isLocalId(t.id)){
       try{
         var pubUrl = await uploadFotoParaStorage(editTankForm.novaFoto, t.unidade_id, t.id, "capa");
         patch.foto = pubUrl;

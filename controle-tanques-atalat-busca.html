@@ -744,7 +744,22 @@ function mapTankFromDb(row){
     unidade_id: row.unidade_id,
     pendente: false,
     historico: (row.historico || []).map(function(h){
-      return {id: h.id, data: h.data, tipo: h.tipo, produtor: h.produtor, litros: h.litros, desc: h.desc_texto || h.desc || "", fotos: h.fotos || [], pendente: false};
+      var parsedFotos = [];
+      if(Array.isArray(h.fotos)){
+        parsedFotos = h.fotos;
+      } else if(typeof h.fotos === "string"){
+        try { parsedFotos = JSON.parse(h.fotos); } catch(e){ if(h.fotos) parsedFotos = [h.fotos]; }
+      }
+      return {
+        id: h.id,
+        data: h.data,
+        tipo: h.tipo,
+        produtor: h.produtor,
+        litros: h.litros,
+        desc: h.desc_texto || h.desc || "",
+        fotos: parsedFotos,
+        pendente: false
+      };
     })
   };
 }
@@ -883,17 +898,35 @@ async function enviarFotosDoRegistro(fotosBase64, unidadeId, tanqueId, histId){
   var keys = Object.keys(fotosBase64||{}).filter(function(k){ return fotosBase64[k]; });
   if(!keys.length) return;
   var urls = {};
+  var fotosArr = [];
   for(var i=0;i<keys.length;i++){
     var k = keys[i];
-    urls[k] = await uploadFotoParaStorage(fotosBase64[k], unidadeId, tanqueId, k);
+    try {
+      urls[k] = await uploadFotoParaStorage(fotosBase64[k], unidadeId, tanqueId, k);
+      fotosArr.push(urls[k]);
+    } catch(err) {
+      console.warn("Upload de foto para storage falhou, usando fallback base64:", err);
+      fotosArr.push(fotosBase64[k]);
+      if(!urls.geral) urls[k] = fotosBase64[k];
+    }
   }
-  var fotosArr = keys.map(function(k){ return urls[k]; });
-  await sb.from("historico").update({fotos: fotosArr}).eq("id", histId);
-  var coverUrl = urls.geral || urls.abrigo || null;
-  if(coverUrl){
-    await sb.from("tanques").update({foto: coverUrl}).eq("id", tanqueId);
+  if(fotosArr.length){
+    await sb.from("historico").update({fotos: fotosArr}).eq("id", histId);
+    var cover = urls.geral || urls.abrigo || urls.plaqueta || fotosArr[0];
+    if(cover){
+      await sb.from("tanques").update({foto: cover}).eq("id", tanqueId);
+    }
   }
 }
+
+app.openPhotoModal = function(src){
+  var modal = document.createElement("div");
+  modal.className = "photo-modal-wrap no-print";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:999;display:flex;align-items:center;justify-content:center;padding:20px;cursor:pointer;";
+  modal.onclick = function(){ modal.remove(); };
+  modal.innerHTML = '<img src="'+src+'" style="max-width:100%;max-height:90vh;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.5);"/>';
+  document.body.appendChild(modal);
+};
 
 function photoSlot(fotos, key, label){
   var src = fotos[key];
@@ -1516,7 +1549,7 @@ function renderDetalhe(){
         '</div>'+
         '<div class="tl-desc">'+esc(h.desc)+'</div>';
       if(h.fotos && h.fotos.length){
-        html += '<div class="tl-photos">'+h.fotos.map(function(f){return '<img src="'+f+'"/>';}).join('')+'</div>';
+        html += '<div class="tl-photos">'+h.fotos.map(function(f){return '<img src="'+f+'" onclick="app.openPhotoModal(\''+f+'\')" style="cursor:pointer;" title="Clique para ampliar"/>';}).join('')+'</div>';
       }
       html += '</div></div>';
     });
