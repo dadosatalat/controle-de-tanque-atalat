@@ -937,15 +937,36 @@ function photoSlot(fotos, key, label){
   '</label>';
 }
 
+app.syncFormInputs = function(){
+  var fData = document.getElementById("f_data"); if(fData) novaForm.data = fData.value;
+  var fNome = document.getElementById("f_prodnome"); if(fNome) novaForm.produtorNome = fNome.value.trim();
+  var fProp = document.getElementById("f_prodprop"); if(fProp) novaForm.produtorProp = fProp.value.trim();
+  var fMat = document.getElementById("f_prodmatricula"); if(fMat) novaForm.produtorMatricula = fMat.value.trim();
+  var fMun = document.getElementById("f_municipio"); if(fMun) novaForm.municipio = fMun.value.trim();
+  var fLat = document.getElementById("f_lat"); if(fLat) novaForm.latitude = fLat.value;
+  var fLng = document.getElementById("f_lng"); if(fLng) novaForm.longitude = fLng.value;
+  var fDesc = document.getElementById("f_desc"); if(fDesc) novaForm.desc = fDesc.value;
+  var fContr = document.getElementById("f_contrato_assinado"); if(fContr) novaForm.contratoAssinado = fContr.value;
+};
+
 app.onPhoto = async function(input, key){
   var file = input.files && input.files[0];
   if(!file) return;
+
+  app.syncFormInputs();
+
+  try {
+    var instantUrl = URL.createObjectURL(file);
+    novaForm.fotos[key] = instantUrl;
+    renderNova();
+  } catch(e){}
+
   try{
-    var dataUrl = await resizeImageFile(file, 1280, 0.72);
+    var dataUrl = await resizeImageFile(file, 900, 0.65);
     novaForm.fotos[key] = dataUrl;
     renderNova();
   }catch(e){
-    app.toast("Não foi possível processar a foto.");
+    console.error("Erro ao comprimir foto:", e);
   }
 };
 
@@ -2030,12 +2051,21 @@ app.salvarVisita = async function(){
       if(updRes.error) throw updRes.error;
     }
 
+    var initialFotos = Object.keys(novaForm.fotos||{}).map(function(k){ return novaForm.fotos[k]; }).filter(Boolean);
+
     var histRes = await sb.from("historico").insert({
       tanque_id: tank.id, data: novaForm.data, tipo: novaForm.tipo,
       produtor: isRetirada ? "—" : (novaForm.produtorNome || "—"), litros: capacidade || tank.capacidade,
-      desc_texto: desc || "(sem observações)", fotos: []
+      desc_texto: desc || "(sem observações)", fotos: initialFotos
     }).select().single();
     if(histRes.error) throw histRes.error;
+
+    if(initialFotos.length){
+      var coverPhoto = novaForm.fotos.geral || novaForm.fotos.abrigo || novaForm.fotos.plaqueta || initialFotos[0];
+      if(coverPhoto){
+        await sb.from("tanques").update({foto: coverPhoto}).eq("id", tank.id);
+      }
+    }
 
     var unidadeFinalFotos = tank.unidade_id;
 
