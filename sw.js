@@ -1,4 +1,4 @@
-const CACHE_NAME = 'atalat-tanques-v1.2.6';
+const CACHE_NAME = 'atalat-tanques-v1.2.7';
 const ASSETS = [
   './',
   './index.html',
@@ -34,7 +34,6 @@ self.addEventListener('fetch', (event) => {
                  url.pathname.endsWith('.html') || 
                  url.pathname.endsWith('/');
 
-  // Network-First for HTML so new versions on Vercel update automatically on mobile PWA!
   if (isHtml) {
     event.respondWith(
       fetch(event.request)
@@ -50,7 +49,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-First for static assets
   event.respondWith(
     caches.match(event.request).then((cached) => {
       return cached || fetch(event.request).then((response) => {
