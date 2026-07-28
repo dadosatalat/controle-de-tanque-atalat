@@ -42,21 +42,37 @@
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     background:var(--bg);
     color:var(--text);
-    display:flex;
-    justify-content:center;
-    padding:28px 12px;
+    min-height:100vh;
   }
   .phone{
-    width:420px;
+    width:100%;
     max-width:100%;
+    min-height:100vh;
+    min-height:100dvh;
     background:var(--card);
-    border-radius:32px;
-    border:8px solid #1c1c1c;
-    overflow:hidden;
-    box-shadow:0 20px 50px rgba(0,0,0,0.18);
-    min-height:820px;
     display:flex;
     flex-direction:column;
+    margin:0 auto;
+    position:relative;
+    border:none;
+    border-radius:0;
+    box-shadow:none;
+  }
+  @media (min-width: 768px){
+    body{
+      padding:24px 16px;
+      display:flex;
+      justify-content:center;
+      align-items:flex-start;
+    }
+    .phone{
+      max-width:1040px;
+      min-height:calc(100vh - 48px);
+      border-radius:18px;
+      border:1px solid var(--border);
+      box-shadow:0 12px 32px rgba(0,0,0,0.08);
+      overflow:hidden;
+    }
   }
   .topbar{
     background:linear-gradient(135deg, #2ea3e0 0%, var(--primary-dark) 100%);
@@ -160,6 +176,20 @@
   textarea{resize:vertical;min-height:60px;}
   label{font-size:12px;color:var(--muted);font-weight:600;margin:12px 0 5px;display:block;}
   .field:first-child label{margin-top:0;}
+  .tank-list{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:10px;
+  }
+  @media (min-width: 600px){
+    .tank-list{
+      grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));
+      gap:12px;
+    }
+    .tank-list .card{
+      margin-bottom:0;
+    }
+  }
   .card{
     background:var(--card);
     border:1px solid var(--border);
@@ -1392,6 +1422,7 @@ function renderPainel(){
   if(list.length===0){
     html += '<div class="empty">'+(baseTanks.length===0 ? 'Nenhum tanque cadastrado nesta unidade ainda.' : 'Nenhum tanque encontrado para esse filtro.')+'</div>';
   } else {
+    html += '<div class="tank-list">';
     list.forEach(function(t){
       var prodLine = t.produtor ? fmtProdutorDisplay(t.produtor) : 'Sem produtor vinculado';
       html += '<div class="card" onclick="app.openTank(\''+t.id+'\')">'+
@@ -1405,6 +1436,7 @@ function renderPainel(){
         (shouldShowUnidadeSelect() ? '<div style="margin-top:6px;"><span class="badge b-unidade">'+esc(unidadeNome(t.unidade_id))+'</span></div>' : '')+
       '</div>';
     });
+    html += '</div>';
   }
   document.getElementById("screen").innerHTML = html;
 }
