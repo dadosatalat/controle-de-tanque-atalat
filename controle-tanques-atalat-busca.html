@@ -2165,7 +2165,7 @@ function renderEditarTanque(){
   html += '<div class="section-title">Foto do tanque</div>';
   var srcFoto = editTankForm.novaFoto || editTankForm.foto;
   var clsFoto = srcFoto ? "photo-slot has-img" : "photo-slot";
-  var innerFoto = srcFoto ? '<img src="'+srcFoto+'"/><span class="label">Alterar foto do tanque</span>' : '<span class="label">+ Adicionar foto do tanque</span>';
+  var innerFoto = srcFoto ? '<img src="'+srcFoto+'" onclick="app.openPhotoModal(\''+srcFoto+'\')"/><span class="label">Alterar foto do tanque</span>' : '<span class="label">+ Adicionar foto do tanque</span>';
   html += '<label class="'+clsFoto+'">'+innerFoto+
     '<input type="file" accept="image/*" capture="environment" onchange="app.onEditTankPhoto(this)"/>'+
   '</label>';
@@ -2231,16 +2231,11 @@ app.salvarEdicaoTanque = async function(){
   };
 
   if(editTankForm.novaFoto){
-    if(isOnline() && !isLocalId(t.id)){
-      try{
-        var pubUrl = await uploadFotoParaStorage(editTankForm.novaFoto, t.unidade_id, t.id, "capa");
-        patch.foto = pubUrl;
-        t.foto = pubUrl;
-      }catch(fotoErr){
-        patch.foto = editTankForm.novaFoto;
-        t.foto = editTankForm.novaFoto;
-      }
-    } else {
+    try{
+      var pubUrl = await uploadFotoParaStorage(editTankForm.novaFoto, t.unidade_id, t.id, "capa");
+      patch.foto = pubUrl;
+      t.foto = pubUrl;
+    }catch(fotoErr){
       patch.foto = editTankForm.novaFoto;
       t.foto = editTankForm.novaFoto;
     }

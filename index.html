@@ -2149,9 +2149,9 @@ function renderEditarTanque(){
   '</select></div>';
   html += '<div class="field"><label>Município</label><input id="e_municipio" value="'+esc(editTankForm.municipio)+'"/></div>';
   html += '<div class="loc-row">'+
-    '<div class="field"><label>Latitude</label><input id="e_lat" type="number" step="any" value="'+esc(String(editTankForm.latitude||""))+'"/></div>';
-    '<div class="field"><label>Longitude</label><input id="e_lng" type="number" step="any" value="'+esc(String(editTankForm.longitude||""))+'"/></div>';
-  html += '</div>';
+    '<div class="field"><label>Latitude</label><input id="e_lat" type="number" step="any" value="'+esc(String(editTankForm.latitude||""))+'"/></div>'+
+    '<div class="field"><label>Longitude</label><input id="e_lng" type="number" step="any" value="'+esc(String(editTankForm.longitude||""))+'"/></div>'+
+  '</div>';
   html += '<button type="button" class="btn btn-loc no-print" onclick="app.usarLocalizacao(\'e_lat\',\'e_lng\')">Usar minha localização atual (GPS)</button>';
 
   html += '<div class="section-title">Foto do tanque</div>';
@@ -2223,15 +2223,11 @@ app.salvarEdicaoTanque = async function(){
   };
 
   if(editTankForm.novaFoto){
-      try{
-        var pubUrl = await uploadFotoParaStorage(editTankForm.novaFoto, t.unidade_id, t.id, "capa");
-        patch.foto = pubUrl;
-        t.foto = pubUrl;
-      }catch(fotoErr){
-        patch.foto = editTankForm.novaFoto;
-        t.foto = editTankForm.novaFoto;
-      }
-    } else {
+    try{
+      var pubUrl = await uploadFotoParaStorage(editTankForm.novaFoto, t.unidade_id, t.id, "capa");
+      patch.foto = pubUrl;
+      t.foto = pubUrl;
+    }catch(fotoErr){
       patch.foto = editTankForm.novaFoto;
       t.foto = editTankForm.novaFoto;
     }
