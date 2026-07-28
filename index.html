@@ -199,6 +199,34 @@
     color:var(--text);
     width:100%;
   }
+  .password-input-wrap{
+    position:relative;
+    width:100%;
+    display:flex;
+    align-items:center;
+  }
+  .password-input-wrap input{
+    padding-right:40px !important;
+  }
+  .password-toggle-btn{
+    position:absolute;
+    right:10px;
+    background:none;
+    border:none;
+    cursor:pointer;
+    padding:4px;
+    font-size:16px;
+    line-height:1;
+    color:var(--muted);
+    opacity:0.75;
+    user-select:none;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .password-toggle-btn:hover{
+    opacity:1;
+  }
   textarea{resize:vertical;min-height:60px;}
   label{font-size:12px;color:var(--muted);font-weight:600;margin:12px 0 5px;display:block;}
   .field:first-child label{margin-top:0;}
@@ -945,6 +973,18 @@ async function enviarFotosDoRegistro(fotosBase64, unidadeId, tanqueId, histId){
   }
 }
 
+app.togglePasswordVisibility = function(inputId, btnEl){
+  var inp = document.getElementById(inputId);
+  if(!inp) return;
+  if(inp.type === "password"){
+    inp.type = "text";
+    if(btnEl) btnEl.innerHTML = "👁️‍🗨️";
+  } else {
+    inp.type = "password";
+    if(btnEl) btnEl.innerHTML = "👁️";
+  }
+};
+
 app.openPhotoModal = function(src){
   var existing = document.querySelector(".photo-modal-wrap");
   if(existing) existing.remove();
@@ -1395,7 +1435,7 @@ function renderLogin(){
   html += '<div class="auth-title">Entrar</div>';
   html += '<div class="auth-sub">Acesse com seu e-mail e senha</div>';
   html += '<div class="field"><label>E-mail</label><input id="a_email" type="email" placeholder="voce@exemplo.com"/></div>';
-  html += '<div class="field"><label>Senha</label><input id="a_senha" type="password" placeholder="••••••••"/></div>';
+  html += '<div class="field"><label>Senha</label><div class="password-input-wrap"><input id="a_senha" type="password" placeholder="••••••••"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'a_senha\', this)">👁️</button></div></div>';
   html += '<button class="btn btn-primary" style="margin-top:14px;" onclick="app.entrar()">Entrar</button>';
   html += '<div class="auth-switch">Ainda não tem conta? <button class="btn-link" onclick="app.trocarAuthMode(\'signup\')">Criar conta</button></div>';
   html += '</div>';
@@ -1414,7 +1454,7 @@ function renderSignup(){
   html += '<div class="auth-sub">Depois de criada, um administrador precisa liberar sua unidade e permissão.</div>';
   html += '<div class="field"><label>Nome completo</label><input id="a_nome" placeholder="Seu nome"/></div>';
   html += '<div class="field"><label>E-mail</label><input id="a_email2" type="email" placeholder="voce@exemplo.com"/></div>';
-  html += '<div class="field"><label>Senha</label><input id="a_senha2" type="password" placeholder="mínimo 6 caracteres"/></div>';
+  html += '<div class="field"><label>Senha</label><div class="password-input-wrap"><input id="a_senha2" type="password" placeholder="mínimo 6 caracteres"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'a_senha2\', this)">👁️</button></div></div>';
   html += '<button class="btn btn-primary" style="margin-top:14px;" onclick="app.criarConta()">Criar conta</button>';
   html += '<div class="auth-switch">Já tem conta? <button class="btn-link" onclick="app.trocarAuthMode(\'login\')">Entrar</button></div>';
   html += '</div>';
@@ -1438,9 +1478,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.2.8</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.2.9</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.2.8</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.2.9</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -2663,7 +2703,7 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v1.2.8</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v1.2.9</div>'+
     '<div class="note" style="margin-top:4px;">Atualizado em 28/07/2026 (Layout Responsivo + PWA + Fotos Instantâneas).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
@@ -2755,8 +2795,8 @@ function renderUsuarioForm(){
   html += '<div class="note">Administrador: acesso total, inclusive gerenciar usuários e ver todas as unidades.<br>Operador de campo: cria/edita tanques e visitas apenas da própria unidade, sem excluir.<br>Consulta: apenas visualização da própria unidade.</div>';
 
   html += '<div class="section-title" style="margin-top:16px;">Segurança / Senha</div>';
-  html += '<div class="field"><label>Nova senha</label><input id="u_novasenha" type="password" placeholder="Digite para redefinir a senha (mínimo 6 caracteres)"/></div>';
-  html += '<div class="field"><label>Confirmar nova senha</label><input id="u_confnovasenha" type="password" placeholder="Confirme a nova senha"/></div>';
+  html += '<div class="field"><label>Nova senha</label><div class="password-input-wrap"><input id="u_novasenha" type="password" placeholder="Digite para redefinir a senha (mínimo 6 caracteres)"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'u_novasenha\', this)">👁️</button></div></div>';
+  html += '<div class="field"><label>Confirmar nova senha</label><div class="password-input-wrap"><input id="u_confnovasenha" type="password" placeholder="Confirme a nova senha"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'u_confnovasenha\', this)">👁️</button></div></div>';
   html += '<button type="button" class="btn btn-ghost no-print" style="margin-top:4px;font-size:12px;padding:8px;" onclick="app.enviarRedefinicaoSenha(\''+userForm.id+'\')">Enviar e-mail de redefinição de senha</button>';
 
   html += '<div class="row-btns" style="margin-top:18px;">'+
