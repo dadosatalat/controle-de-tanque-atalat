@@ -1,4 +1,4 @@
-const CACHE_NAME = 'atalat-tanques-v1.2.5';
+const CACHE_NAME = 'atalat-tanques-v1.2.6';
 const ASSETS = [
   './',
   './index.html',
@@ -8,10 +8,10 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -21,17 +21,41 @@ self.addEventListener('activate', (event) => {
         keys.map((key) => {
           if (key !== CACHE_NAME) return caches.delete(key);
         })
-      )
+      ).then(() => self.clients.claim())
     )
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  const url = new URL(event.request.url);
+  const isHtml = event.request.headers.get('accept')?.includes('text/html') || 
+                 url.pathname.endsWith('.html') || 
+                 url.pathname.endsWith('/');
+
+  // Network-First for HTML so new versions on Vercel update automatically on mobile PWA!
+  if (isHtml) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Cache-First for static assets
   event.respondWith(
     caches.match(event.request).then((cached) => {
-      return cached || fetch(event.request).catch(() => cached);
+      return cached || fetch(event.request).then((response) => {
+        return response;
+      }).catch(() => cached);
     })
   );
 });
