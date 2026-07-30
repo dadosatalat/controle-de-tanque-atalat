@@ -1554,9 +1554,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.1</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.2</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.1</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.2</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -2800,6 +2800,19 @@ function renderConfig(){
     '<button class="btn btn-primary" style="margin-top:12px;" onclick="app.forcarSincronizacao()">'+(sincronizando ? 'Sincronizando...' : 'Enviar dados coletados agora')+'</button>'+
   '</div>';
 
+  if(hasPerm("gerenciarUsuarios")){
+    html += '<div class="section-title">Gerenciar / Redefinir Senha de Usuário</div>';
+    var uOptions = state.profiles.map(function(p){
+      return '<option value="'+p.id+'">'+esc(p.nome)+' ('+esc(p.usuario||p.email||'')+')</option>';
+    }).join('');
+    html += '<div class="current-user-card" style="margin-bottom:18px;">'+
+      '<div class="l">Redefinição Rápida de Senha</div>'+
+      '<div class="field" style="margin-top:8px;"><label>Selecione o usuário</label><select id="adm_user_select">'+uOptions+'</select></div>'+
+      '<div class="field"><label>Nova senha</label><div class="password-input-wrap"><input id="adm_nova_senha" type="password" placeholder="Digite a nova senha para o usuário"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'adm_nova_senha\', this)">👁️</button></div></div>'+
+      '<button class="btn btn-primary" style="margin-top:12px;" onclick="app.definirSenhaUsuario()">✉️ Enviar Redefinição de Senha para Usuário</button>'+
+    '</div>';
+  }
+
   if(!hasPerm("gerenciarUsuarios")){
     html += '<div class="empty">Apenas administradores podem gerenciar usuários e permissões.</div>';
     document.getElementById("screen").innerHTML = html;
@@ -2830,6 +2843,34 @@ function renderConfig(){
 
   document.getElementById("screen").innerHTML = html;
 }
+
+app.definirSenhaUsuario = async function(){
+  clearInvalid();
+  var userId = document.getElementById("adm_user_select").value;
+  var novaSenha = document.getElementById("adm_nova_senha").value;
+  if(!userId){ markInvalid("adm_user_select", "Selecione o usuário."); return; }
+
+  var u = findProfile(userId);
+  if(!u){ app.toast("Usuário não encontrado."); return; }
+
+  var email = u.usuario || u.email;
+  app.toast("Enviando solicitação de redefinição de senha para " + (u.nome || email) + "...");
+
+  if(userId === state.me.id && novaSenha){
+    if(novaSenha.length < 6){ markInvalid("adm_nova_senha", "Senha deve ter ao menos 6 caracteres."); return; }
+    var resSelf = await sb.auth.updateUser({ password: novaSenha });
+    if(resSelf.error){ app.toast("Erro ao alterar senha: " + resSelf.error.message); return; }
+    app.toast("Sua senha foi alterada com sucesso!");
+    document.getElementById("adm_nova_senha").value = "";
+  } else {
+    var resEmail = await sb.auth.resetPasswordForEmail(email);
+    if(resEmail.error){
+      app.toast("Erro ao enviar: " + resEmail.error.message);
+    } else {
+      app.toast("✅ E-mail de redefinição de senha enviado para " + email + "!");
+    }
+  }
+};
 
 app.alterarMinhaSenha = async function(){
   clearInvalid();
