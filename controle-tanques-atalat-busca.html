@@ -1395,7 +1395,7 @@ async function bootAfterAuthChange(){
 
 app.entrar = async function(){
   clearInvalid();
-  var email = (document.getElementById("a_email").value || "").trim();
+  var email = (document.getElementById("a_email").value || "").trim().toLowerCase();
   var senha = document.getElementById("a_senha").value || "";
   var invalid = false;
   if(!email){ markInvalid("a_email", "Informe o e-mail."); invalid = true; }
@@ -1403,7 +1403,11 @@ app.entrar = async function(){
   if(invalid) return;
   var res = await sb.auth.signInWithPassword({email: email, password: senha});
   if(res.error){
-    app.toast("Não foi possível entrar: "+res.error.message);
+    if(res.error.message.includes("Invalid login credentials")){
+      app.toast("E-mail ou senha incorretos. Verifique se o e-mail ("+email+") foi cadastrado com essa senha ou clique em 'Esqueci minha senha'.");
+    } else {
+      app.toast("Não foi possível entrar: "+res.error.message);
+    }
     return;
   }
 };
@@ -1470,12 +1474,50 @@ function renderLogin(){
   html += '<div class="auth-sub">Acesse com seu e-mail e senha</div>';
   html += '<div class="field"><label>E-mail</label><input id="a_email" type="email" placeholder="voce@exemplo.com"/></div>';
   html += '<div class="field"><label>Senha</label><div class="password-input-wrap"><input id="a_senha" type="password" placeholder="••••••••"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'a_senha\', this)">👁️</button></div></div>';
-  html += '<button class="btn btn-primary" style="margin-top:14px;" onclick="app.entrar()">Entrar</button>';
+  html += '<div style="text-align:right;margin-top:-6px;margin-bottom:12px;"><button type="button" class="btn-link" style="font-size:12px;" onclick="app.trocarAuthMode(\'forgot\')">Esqueci minha senha</button></div>';
+  html += '<button class="btn btn-primary" style="margin-top:4px;" onclick="app.entrar()">Entrar</button>';
   html += '<div class="auth-switch">Ainda não tem conta? <button class="btn-link" onclick="app.trocarAuthMode(\'signup\')">Criar conta</button></div>';
   html += '</div>';
 
   document.getElementById("screen").innerHTML = html;
 }
+
+function renderForgotPassword(){
+  document.getElementById("topTitle").textContent = "ControleTanque";
+  document.getElementById("topSub").textContent = "Recuperação de senha";
+  document.getElementById("topbarRight").innerHTML = "";
+  document.getElementById("navbar").style.display = "none";
+
+  var html = '<div class="auth-wrap">';
+  html += '<div class="auth-title">Recuperar Senha</div>';
+  html += '<div class="auth-sub">Digite seu e-mail cadastrado. Enviaremos um link para você redefinir sua senha.</div>';
+  html += '<div class="field"><label>E-mail cadastrado</label><input id="a_reset_email" type="email" placeholder="voce@exemplo.com"/></div>';
+  html += '<button class="btn btn-primary" style="margin-top:14px;" onclick="app.enviarLinkRecuperacao()">Enviar link de redefinição</button>';
+  html += '<div class="auth-switch">Lembrou a senha? <button class="btn-link" onclick="app.trocarAuthMode(\'login\')">Voltar ao Entrar</button></div>';
+  html += '</div>';
+
+  document.getElementById("screen").innerHTML = html;
+}
+
+app.enviarLinkRecuperacao = async function(){
+  clearInvalid();
+  var email = (document.getElementById("a_reset_email").value || "").trim().toLowerCase();
+  if(!email){ markInvalid("a_reset_email", "Informe o e-mail."); return; }
+  
+  app.toast("Enviando e-mail de recuperação...");
+  var res = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.href
+  });
+
+  if(res.error){
+    app.toast("Não foi possível enviar o e-mail: " + res.error.message);
+  } else {
+    app.toast("Enviamos um e-mail para " + email + ". Verifique sua caixa de entrada e spam!");
+    state.authMode = "login";
+    state.view = "login";
+    render();
+  }
+};
 
 function renderSignup(){
   document.getElementById("topTitle").textContent = "ControleTanque";
@@ -1512,9 +1554,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.1</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.1</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -2957,6 +2999,7 @@ function render(){
   if(state.view==="carregando") renderCarregando();
   else if(state.view==="login") renderLogin();
   else if(state.view==="signup") renderSignup();
+  else if(state.view==="forgot") renderForgotPassword();
   else if(!state.me){ renderCarregando(); }
   else if(state.view==="painel") renderPainel();
   else if(state.view==="nova") renderNova();
