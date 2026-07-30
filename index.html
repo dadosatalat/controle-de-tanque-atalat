@@ -1399,7 +1399,7 @@ app.entrar = async function(){
   var res = await sb.auth.signInWithPassword({email: email, password: senha});
   if(res.error){
     if(res.error.message.includes("Invalid login credentials")){
-      app.toast("E-mail ou senha incorretos. Verifique se o e-mail ("+email+") foi cadastrado com essa senha ou clique em 'Esqueci minha senha'.");
+      app.toast("⚠️ Não foi possível entrar. Verifique se clicou no link de confirmação enviado para "+email+" ou use 'Esqueci minha senha'.");
     } else {
       app.toast("Não foi possível entrar: "+res.error.message);
     }
@@ -1439,7 +1439,7 @@ app.criarConta = async function(){
   if(res.data.session){
     app.toast("Conta criada como Operador de Campo!");
   } else {
-    app.toast("Conta criada como Operador de Campo! Verifique seu e-mail para confirmar.");
+    app.toast("📧 Conta cadastrada! Enviamos um e-mail de confirmação para "+email+". Acesse sua caixa de entrada para ativar o login.");
     state.authMode = "login";
     state.view = "login";
     render();
@@ -1549,9 +1549,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.2</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.3</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.2</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.3</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -2774,7 +2774,7 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v1.3.2</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v1.3.3</div>'+
     '<div class="note" style="margin-top:4px;">Atualizado em 28/07/2026 (Layout Responsivo + PWA + Fotos Instantâneas).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
