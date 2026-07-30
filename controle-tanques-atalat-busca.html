@@ -1544,8 +1544,26 @@ function initTheme(){
   applyTheme(saved);
 }
 
+function autoCheckAppUpdate(){
+  var CURRENT_VERSION = "v1.4.5";
+  var lastVer = localStorage.getItem("atalat_app_version");
+  if(lastVer !== CURRENT_VERSION){
+    localStorage.setItem("atalat_app_version", CURRENT_VERSION);
+    localStorage.removeItem(CACHE_KEY);
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.getRegistrations().then(function(regs){
+        for(var r of regs) r.unregister();
+        caches.keys().then(function(names){
+          for(var n of names) caches.delete(n);
+        });
+      });
+    }
+  }
+}
+
 // ---------- AUTENTICACAO ----------
 async function init(){
+  autoCheckAppUpdate();
   initTheme();
   var sess = await sb.auth.getSession();
   state.session = sess.data.session;
