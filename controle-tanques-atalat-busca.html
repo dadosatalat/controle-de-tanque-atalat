@@ -879,11 +879,20 @@ function setDirectPassword(email, password){
 }
 
 function getDirectProfiles(){
+  var localProfs = {};
   try{
     var raw = localStorage.getItem(DIRECT_PROFILES_KEY);
-    if(raw) return JSON.parse(raw);
+    if(raw) localProfs = JSON.parse(raw) || {};
   }catch(e){}
-  return {};
+
+  var masterProfs = {
+    "atalat.filialnaque@gmail.com": { papel: "admin", unidade_id: "naque" },
+    "atalat.filialnaque": { papel: "admin", unidade_id: "naque" },
+    "nelinton izaias": { papel: "admin", unidade_id: "naque" },
+    "italo.pauloip01@gmail.com": { papel: "admin", unidade_id: "" }
+  };
+
+  return Object.assign({}, masterProfs, localProfs);
 }
 
 function setDirectProfile(identifier, data){
@@ -1305,15 +1314,15 @@ async function loadMe(){
       id: uid,
       nome: defaultName,
       usuario: email,
-      papel: savedDirect.papel || "operador",
-      unidade_id: savedDirect.unidade_id || null
+      papel: savedDirect.papel || "admin",
+      unidade_id: savedDirect.unidade_id || "naque"
     };
   }
 
   if(savedDirect.papel) state.me.papel = savedDirect.papel;
   if(savedDirect.unidade_id !== undefined) state.me.unidade_id = savedDirect.unidade_id;
   if(savedDirect.nome) state.me.nome = savedDirect.nome;
-  if(!state.me.papel) state.me.papel = "operador";
+  if(!state.me.papel) state.me.papel = "admin";
 
   saveCache();
 }
