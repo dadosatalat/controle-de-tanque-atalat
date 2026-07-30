@@ -846,6 +846,118 @@ var CACHE_KEY = "atalat_cache_v1";
 var QUEUE_KEY = "atalat_fila_v1";
 var DIRECT_PASS_KEY = "atalat_direct_passwords_v1";
 var DIRECT_PROFILES_KEY = "atalat_direct_profiles_v1";
+var SHARED_TANKS_KEY = "atalat_shared_tanks_v1";
+
+var INITIAL_SEED_TANKS = [
+  {
+    id: "tank_seed_1",
+    serie: "TQ-5555",
+    patrimonio: "PAT-5555",
+    capacidade: 40000,
+    status: "estoque",
+    unidade_id: "naque",
+    local: { municipio: "Naque - MG", latitude: "", longitude: "" },
+    produtor: null,
+    foto: null,
+    contrato_assinado: false,
+    historico: [{ id: "h1", data: todayISO(), tipo: "Troca", produtor: "—", litros: 40000, fotos: [], desc_texto: "Tanque em estoque na unidade Naque." }]
+  },
+  {
+    id: "tank_seed_2",
+    serie: "TQ-5555",
+    patrimonio: "PAT-5555",
+    capacidade: 5000,
+    status: "estoque",
+    unidade_id: "naque",
+    local: { municipio: "Naque - MG", latitude: "", longitude: "" },
+    produtor: null,
+    foto: null,
+    contrato_assinado: false,
+    historico: [{ id: "h2", data: todayISO(), tipo: "Troca", produtor: "—", litros: 5000, fotos: [], desc_texto: "Tanque em estoque na unidade Naque." }]
+  },
+  {
+    id: "tank_seed_3",
+    serie: "TQ-5555",
+    patrimonio: "PAT-5555",
+    capacidade: 5000,
+    status: "estoque",
+    unidade_id: "naque",
+    local: { municipio: "Naque - MG", latitude: "", longitude: "" },
+    produtor: null,
+    foto: null,
+    contrato_assinado: false,
+    historico: [{ id: "h3", data: todayISO(), tipo: "Troca", produtor: "—", litros: 5000, fotos: [], desc_texto: "Tanque em estoque na unidade Naque." }]
+  },
+  {
+    id: "tank_seed_4",
+    serie: "TQ-1001",
+    patrimonio: "PAT-2201",
+    capacidade: 5000,
+    status: "operacao",
+    unidade_id: "matriz",
+    local: { municipio: "Governador Valadares - MG", latitude: "", longitude: "" },
+    produtor: { nome: "José Ribeiro da Silva", propriedade: "Fazenda Santa Luzia", matricula: "" },
+    foto: null,
+    contrato_assinado: true,
+    historico: [{ id: "h4", data: todayISO(), tipo: "Troca", produtor: "José Ribeiro da Silva", litros: 5000, fotos: [], desc_texto: "Tanque instalado na Fazenda Santa Luzia." }]
+  },
+  {
+    id: "tank_seed_5",
+    serie: "TQ-3001",
+    patrimonio: "PAT-4401",
+    capacidade: 5000,
+    status: "operacao",
+    unidade_id: "matriz",
+    local: { municipio: "Naque - MG", latitude: "", longitude: "" },
+    produtor: { nome: "Sebastião Almeida Reis", propriedade: "Fazenda Bela Vista", matricula: "" },
+    foto: null,
+    contrato_assinado: true,
+    historico: [{ id: "h5", data: todayISO(), tipo: "Troca", produtor: "Sebastião Almeida Reis", litros: 5000, fotos: [], desc_texto: "Tanque instalado na Fazenda Bela Vista." }]
+  },
+  {
+    id: "tank_seed_6",
+    serie: "TQ-1002",
+    patrimonio: "PAT-2202",
+    capacidade: 3000,
+    status: "estoque",
+    unidade_id: "matriz",
+    local: { municipio: "Matriz - MG", latitude: "", longitude: "" },
+    produtor: null,
+    foto: null,
+    contrato_assinado: false,
+    historico: [{ id: "h6", data: todayISO(), tipo: "Manutenção", produtor: "—", litros: 3000, fotos: [], desc_texto: "Tanque recolhido em estoque." }]
+  },
+  {
+    id: "tank_seed_7",
+    serie: "TQ-1003",
+    patrimonio: "PAT-2203",
+    capacidade: 4000,
+    status: "manutencao",
+    unidade_id: "matriz",
+    local: { municipio: "Governador Valadares - MG", latitude: "", longitude: "" },
+    produtor: { nome: "Marcos Oliveira", propriedade: "Sítio Bom Jesus", matricula: "" },
+    foto: null,
+    contrato_assinado: false,
+    historico: [{ id: "h7", data: todayISO(), tipo: "Manutenção", produtor: "Marcos Oliveira", litros: 4000, fotos: [], desc_texto: "Aguardando reparo na unidade." }]
+  }
+];
+
+function getSharedTanks(){
+  try{
+    var raw = localStorage.getItem(SHARED_TANKS_KEY);
+    if(raw){
+      var parsed = JSON.parse(raw);
+      if(parsed && parsed.length > 0) return parsed;
+    }
+  }catch(e){}
+  return INITIAL_SEED_TANKS;
+}
+
+function saveSharedTanks(tanks){
+  try{
+    localStorage.setItem(SHARED_TANKS_KEY, JSON.stringify(tanks));
+  }catch(e){}
+}
 
 function normalizeUserKey(str){
   if(!str) return "";
@@ -1342,15 +1454,12 @@ async function loadTanques(){
       .order("created_at", {ascending:false});
     if(res.data && res.data.length > 0){
       state.tanks = res.data.map(mapTankFromDb);
+      saveSharedTanks(state.tanks);
+      return;
     }
   }catch(e){}
 
-  if(!state.tanks || state.tanks.length === 0){
-    var cache = loadCacheFromDisk();
-    if(cache && cache.tanks && cache.tanks.length){
-      state.tanks = cache.tanks;
-    }
-  }
+  state.tanks = getSharedTanks();
 }
 
 async function loadProfiles(){
