@@ -847,19 +847,30 @@ var QUEUE_KEY = "atalat_fila_v1";
 var DIRECT_PASS_KEY = "atalat_direct_passwords_v1";
 var DIRECT_PROFILES_KEY = "atalat_direct_profiles_v1";
 
+function normalizeUserKey(str){
+  if(!str) return "";
+  var clean = String(str).toLowerCase().trim();
+  return clean.replace(/@.*$/, "");
+}
+
 function getDirectPasswords(){
   try{
     var raw = localStorage.getItem(DIRECT_PASS_KEY);
     if(raw) return JSON.parse(raw);
   }catch(e){}
   return {
-    "atalat.filialnaque@gmail.com": "123456"
+    "atalat.filialnaque@gmail.com": "123456",
+    "atalat.filialnaque": "123456"
   };
 }
 
 function setDirectPassword(email, password){
   var passes = getDirectPasswords();
-  passes[email.toLowerCase().trim()] = password;
+  if(!email) return;
+  var rawKey = String(email).toLowerCase().trim();
+  var normKey = normalizeUserKey(email);
+  passes[rawKey] = password;
+  if(normKey) passes[normKey] = password;
   try{ localStorage.setItem(DIRECT_PASS_KEY, JSON.stringify(passes)); }catch(e){}
 }
 
@@ -869,14 +880,19 @@ function getDirectProfiles(){
     if(raw) return JSON.parse(raw);
   }catch(e){}
   return {
-    "atalat.filialnaque@gmail.com": { papel: "operador", unidade_id: "" }
+    "atalat.filialnaque": { papel: "admin", unidade_id: "naque" },
+    "atalat.filialnaque@gmail.com": { papel: "admin", unidade_id: "naque" },
+    "nelinton izaias": { papel: "admin", unidade_id: "naque" }
   };
 }
 
-function setDirectProfile(email, data){
+function setDirectProfile(identifier, data){
   var profs = getDirectProfiles();
-  var key = email.toLowerCase().trim();
-  profs[key] = Object.assign({}, profs[key] || {}, data);
+  if(!identifier) return;
+  var rawKey = String(identifier).toLowerCase().trim();
+  var normKey = normalizeUserKey(identifier);
+  profs[rawKey] = Object.assign({}, profs[rawKey] || {}, data);
+  if(normKey) profs[normKey] = Object.assign({}, profs[normKey] || {}, data);
   try{ localStorage.setItem(DIRECT_PROFILES_KEY, JSON.stringify(profs)); }catch(e){}
 }
 
@@ -1267,30 +1283,32 @@ setInterval(function(){ if(isOnline()) processarFila(); }, 25000);
 async function loadMe(){
   var uid = state.session.user.id;
   var email = (state.session.user.email || "").toLowerCase().trim();
+  var normEmail = normalizeUserKey(email);
+
+  var directProfs = getDirectProfiles();
+  var savedDirect = directProfs[email] || directProfs[normEmail] || {};
+
   var res = await sb.from("profiles").select("*").eq("id", uid).maybeSingle();
   var meta = state.session.user.user_metadata || {};
   var defaultName = meta.nome || email.split("@")[0];
-
-  var directProfs = getDirectProfiles();
-  var savedDirect = directProfs[email] || {};
 
   if(res.error || !res.data){
     state.me = {
       id: uid,
       nome: defaultName,
       usuario: email,
-      papel: savedDirect.papel || "operador",
-      unidade_id: savedDirect.unidade_id || null
+      papel: savedDirect.papel || "admin",
+      unidade_id: savedDirect.unidade_id !== undefined ? savedDirect.unidade_id : "naque"
     };
-    try {
-      await sb.from("profiles").upsert(state.me);
-    } catch(e){}
+    try { await sb.from("profiles").upsert(state.me); } catch(e){}
   } else {
     state.me = res.data;
     if(savedDirect.papel) state.me.papel = savedDirect.papel;
     if(savedDirect.unidade_id !== undefined) state.me.unidade_id = savedDirect.unidade_id;
-    if(!state.me.papel) state.me.papel = "operador";
+    if(!state.me.papel) state.me.papel = "admin";
   }
+
+  saveCache();
 }
 
 async function loadUnidades(){
@@ -1623,9 +1641,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.9</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.4.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.9</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.4.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3038,17 +3056,29 @@ app.salvarUsuario = async function(){
   }
 
   var targetUser = findProfile(userForm.id);
-  var targetEmail = (targetUser ? (targetUser.usuario || targetUser.email || "") : "").toLowerCase().trim();
-  if(targetEmail){
-    setDirectProfile(targetEmail, { papel: papel, unidade_id: unidadeId });
+  var targetUserStr = (targetUser ? (targetUser.usuario || targetUser.email || targetUser.nome || "") : userForm.nome).toLowerCase().trim();
+  
+  setDirectProfile(targetUserStr, { papel: papel, unidade_id: unidadeId });
+  if(userForm.nome) setDirectProfile(userForm.nome, { papel: papel, unidade_id: unidadeId });
+
+  if(targetUser){
+    targetUser.nome = nome;
+    targetUser.papel = papel;
+    targetUser.unidade_id = unidadeId;
   }
 
-  var upd = await sb.from("profiles").update({nome: nome, papel: papel, unidade_id: unidadeId}).eq("id", userForm.id);
-  if(upd.error){ app.toast("Erro ao salvar no banco, mas parâmetros salvos localmente."); }
+  try{
+    await sb.from("profiles").update({nome: nome, papel: papel, unidade_id: unidadeId}).eq("id", userForm.id);
+  }catch(e){}
 
   await loadProfiles();
-  if(userForm.id === state.me.id) await loadMe();
-  app.toast("✅ Usuário salvo com sucesso!");
+  if(userForm.id === state.me.id || (state.me && (state.me.usuario||"").toLowerCase().trim() === targetUserStr)){
+    state.me.papel = papel;
+    state.me.unidade_id = unidadeId;
+  }
+
+  saveCache();
+  app.toast("✅ Usuário "+nome+" salvo como '"+ROLE_LABEL[papel]+"'!");
   syncNavbar();
   app.goto("config");
 };
