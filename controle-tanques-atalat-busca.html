@@ -840,6 +840,7 @@ function mapsLink(lat, lng){
 var CACHE_KEY = "atalat_cache_v1";
 var QUEUE_KEY = "atalat_fila_v1";
 var DIRECT_PASS_KEY = "atalat_direct_passwords_v1";
+var DIRECT_PROFILES_KEY = "atalat_direct_profiles_v1";
 
 function getDirectPasswords(){
   try{
@@ -855,6 +856,23 @@ function setDirectPassword(email, password){
   var passes = getDirectPasswords();
   passes[email.toLowerCase().trim()] = password;
   try{ localStorage.setItem(DIRECT_PASS_KEY, JSON.stringify(passes)); }catch(e){}
+}
+
+function getDirectProfiles(){
+  try{
+    var raw = localStorage.getItem(DIRECT_PROFILES_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return {
+    "atalat.filialnaque@gmail.com": { papel: "operador", unidade_id: "" }
+  };
+}
+
+function setDirectProfile(email, data){
+  var profs = getDirectProfiles();
+  var key = email.toLowerCase().trim();
+  profs[key] = Object.assign({}, profs[key] || {}, data);
+  try{ localStorage.setItem(DIRECT_PROFILES_KEY, JSON.stringify(profs)); }catch(e){}
 }
 
 function localId(prefix){
@@ -1248,27 +1266,30 @@ setInterval(function(){ if(isOnline()) processarFila(); }, 25000);
 // ---------- CARREGAMENTO DE DADOS ----------
 async function loadMe(){
   var uid = state.session.user.id;
+  var email = (state.session.user.email || "").toLowerCase().trim();
   var res = await sb.from("profiles").select("*").eq("id", uid).maybeSingle();
   var meta = state.session.user.user_metadata || {};
-  var defaultName = meta.nome || state.session.user.email.split("@")[0];
+  var defaultName = meta.nome || email.split("@")[0];
+
+  var directProfs = getDirectProfiles();
+  var savedDirect = directProfs[email] || {};
 
   if(res.error || !res.data){
     state.me = {
       id: uid,
       nome: defaultName,
-      usuario: state.session.user.email,
-      papel: "operador",
-      unidade_id: null
+      usuario: email,
+      papel: savedDirect.papel || "operador",
+      unidade_id: savedDirect.unidade_id || null
     };
     try {
       await sb.from("profiles").upsert(state.me);
     } catch(e){}
   } else {
     state.me = res.data;
-    if(!state.me.papel){
-      state.me.papel = "operador";
-      try { await sb.from("profiles").update({papel: "operador"}).eq("id", uid); } catch(e){}
-    }
+    if(savedDirect.papel) state.me.papel = savedDirect.papel;
+    if(savedDirect.unidade_id !== undefined) state.me.unidade_id = savedDirect.unidade_id;
+    if(!state.me.papel) state.me.papel = "operador";
   }
 }
 
@@ -1574,9 +1595,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.4</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.5</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.4</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.3.5</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -1587,8 +1608,8 @@ function syncNavbar(){
 }
 
 function contaPendenteHtml(){
-  if(state.me && state.me.papel !== "admin" && !state.me.unidade_id){
-    return '<div class="banner-warn">Sua conta ainda não foi configurada. Peça para um administrador te atribuir uma unidade e uma permissão em Configurações.</div>';
+  if(state.me && !state.me.papel){
+    return '<div class="banner-warn">Sua conta ainda não foi configurada. Peça para um administrador te atribuir uma permissão em Configurações.</div>';
   }
   return "";
 }
@@ -2989,12 +3010,18 @@ app.salvarUsuario = async function(){
     }
   }
 
+  var targetUser = findProfile(userForm.id);
+  var targetEmail = (targetUser ? (targetUser.usuario || targetUser.email || "") : "").toLowerCase().trim();
+  if(targetEmail){
+    setDirectProfile(targetEmail, { papel: papel, unidade_id: unidadeId });
+  }
+
   var upd = await sb.from("profiles").update({nome: nome, papel: papel, unidade_id: unidadeId}).eq("id", userForm.id);
-  if(upd.error){ app.toast("Erro ao salvar: "+upd.error.message); return; }
+  if(upd.error){ app.toast("Erro ao salvar no banco, mas parâmetros salvos localmente."); }
 
   await loadProfiles();
   if(userForm.id === state.me.id) await loadMe();
-  app.toast("Usuário salvo.");
+  app.toast("✅ Usuário salvo com sucesso!");
   syncNavbar();
   app.goto("config");
 };
