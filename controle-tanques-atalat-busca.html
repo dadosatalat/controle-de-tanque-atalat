@@ -873,6 +873,19 @@ var SHARED_TANKS_KEY = "atalat_shared_tanks_v1";
 var DELETED_TANKS_KEY = "atalat_deleted_tanks_v3";
 var CLOUD_MASTER_URL = "https://api.restful-api.dev/objects/ff8081819f7e10ae019fb9c891f85944";
 
+function fetchWithTimeout(url, options, ms){
+  return new Promise(function(resolve){
+    var timer = setTimeout(function(){ resolve(null); }, ms || 2000);
+    fetch(url, options).then(function(res){
+      clearTimeout(timer);
+      resolve(res);
+    }).catch(function(){
+      clearTimeout(timer);
+      resolve(null);
+    });
+  });
+}
+
 async function pushToCloudMaster(){
   try{
     var cleanTanks = (state.tanks||[]).map(function(t){
@@ -888,18 +901,18 @@ async function pushToCloudMaster(){
         deleted: getDeletedTanks()
       }
     };
-    await fetch(CLOUD_MASTER_URL, {
+    await fetchWithTimeout(CLOUD_MASTER_URL, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
-    });
+    }, 2500);
   }catch(e){}
 }
 
 async function pullFromCloudMaster(){
   try{
-    var res = await fetch(CLOUD_MASTER_URL + "?t=" + Date.now());
-    if(res.ok){
+    var res = await fetchWithTimeout(CLOUD_MASTER_URL + "?t=" + Date.now(), {}, 2500);
+    if(res && res.ok){
       var json = await res.json();
       if(json && json.data && Array.isArray(json.data.tanks)){
         var cloudTanks = json.data.tanks;
@@ -1534,11 +1547,13 @@ async function loadUnidades(){
 }
 
 async function loadTanques(){
-  await pullFromCloudMaster();
+  state.tanks = getSharedTanks();
   if(!state.tanks || state.tanks.length === 0){
     state.tanks = INITIAL_SEED_TANKS;
-    await pushToCloudMaster();
   }
+  pullFromCloudMaster().then(function(){
+    render();
+  });
 }
 
 async function loadProfiles(){
@@ -1619,7 +1634,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.5.0";
+  var CURRENT_VERSION = "v2.5.1";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -1910,7 +1925,7 @@ function renderTopbarUser(){
   if(pend > 0){
     document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.5.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.5.1</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
