@@ -871,6 +871,59 @@ var DIRECT_PASS_KEY = "atalat_direct_passwords_v1";
 var DIRECT_PROFILES_KEY = "atalat_direct_profiles_v1";
 var SHARED_TANKS_KEY = "atalat_shared_tanks_v1";
 var DELETED_TANKS_KEY = "atalat_deleted_tanks_v3";
+var CLOUD_MASTER_URL = "https://api.restful-api.dev/objects/ff8081819f7e10ae019fb9c891f85944";
+
+async function pushToCloudMaster(){
+  try{
+    var cleanTanks = (state.tanks||[]).map(function(t){
+      var copy = Object.assign({}, t);
+      delete copy.pendente;
+      return copy;
+    });
+    var payload = {
+      name: "atalat_tanks_sync_master",
+      data: {
+        updatedAt: Date.now(),
+        tanks: cleanTanks,
+        deleted: getDeletedTanks()
+      }
+    };
+    await fetch(CLOUD_MASTER_URL, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  }catch(e){}
+}
+
+async function pullFromCloudMaster(){
+  try{
+    var res = await fetch(CLOUD_MASTER_URL + "?t=" + Date.now());
+    if(res.ok){
+      var json = await res.json();
+      if(json && json.data && Array.isArray(json.data.tanks)){
+        var cloudTanks = json.data.tanks;
+        var cloudDeleted = json.data.deleted || [];
+        
+        var localDeleted = getDeletedTanks();
+        cloudDeleted.forEach(function(d){
+          if(localDeleted.indexOf(d) === -1) localDeleted.push(d);
+        });
+        try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify(localDeleted)); }catch(e){}
+
+        var filtered = cloudTanks.filter(function(t){
+          return !isTankDeleted(t);
+        });
+
+        if(filtered.length > 0){
+          state.tanks = filtered;
+          saveSharedTanks(state.tanks);
+          saveCache();
+        }
+      }
+    }
+  }catch(e){}
+}
 
 var syncChannel = (typeof BroadcastChannel !== "undefined") ? new BroadcastChannel("atalat_sync_bus") : null;
 if(syncChannel){
@@ -1293,17 +1346,28 @@ async function processarFila(){
   state.tanks.forEach(function(t){ t.pendente = false; });
   saveCache();
   saveSharedTanks(state.tanks);
+  await pushToCloudMaster();
+  await pullFromCloudMaster();
   render();
 }
 
 app.forcarSincronizacao = async function(){
-  app.toast("Iniciando envio dos dados pendentes...");
-  await processarFila();
+  app.toast("Sincronizando com a nuvem...");
+  await pushToCloudMaster();
+  await pullFromCloudMaster();
   setQueue([]);
   state.tanks.forEach(function(t){ t.pendente = false; });
   saveCache();
   saveSharedTanks(state.tanks);
-  app.toast("🎉 Dados sincronizados com sucesso!");
+  app.toast("🎉 Dados sincronizados em tempo real!");
+  render();
+};
+
+app.sincronizarEReceberDados = async function(){
+  app.toast("Sincronizando com a nuvem...");
+  await pushToCloudMaster();
+  await pullFromCloudMaster();
+  app.toast("🎉 Dados sincronizados em tempo real!");
   render();
 };
 
@@ -1420,7 +1484,7 @@ window.addEventListener("offline", function(){
   app.toast("Você está offline. As próximas ações serão salvas no aparelho.");
   render();
 });
-setInterval(function(){ if(isOnline()) processarFila(); }, 25000);
+setInterval(function(){ if(isOnline()){ pullFromCloudMaster().then(render); } }, 15000);
 
 // ---------- CARREGAMENTO DE DADOS ----------
 async function loadMe(){
@@ -1474,38 +1538,11 @@ async function loadUnidades(){
 }
 
 async function loadTanques(){
-  var dbTanks = [];
-  try{
-    var res = await sb.from("tanques")
-      .select("*, historico(id,data,tipo,produtor,litros,fotos,desc_texto)")
-      .order("created_at", {ascending:false});
-    if(res.data && res.data.length > 0){
-      dbTanks = res.data.map(mapTankFromDb);
-    }
-  }catch(e){}
-
-  var baseList = getSharedTanks();
-  var combined = [].concat(dbTanks);
-
-  baseList.forEach(function(bt){
-    var exists = combined.some(function(ct){
-      return ct.id === bt.id || (ct.serie === bt.serie && ct.patrimonio === bt.patrimonio);
-    });
-    if(!exists && !isTankDeleted(bt)) combined.push(bt);
-  });
-
-  INITIAL_SEED_TANKS.forEach(function(st){
-    var exists = combined.some(function(ct){
-      return ct.id === st.id || (ct.serie === st.serie && ct.patrimonio === st.patrimonio);
-    });
-    if(!exists && !isTankDeleted(st)) combined.push(st);
-  });
-
-  state.tanks = combined.filter(function(t){
-    return !isTankDeleted(t);
-  });
-
-  saveSharedTanks(state.tanks);
+  await pullFromCloudMaster();
+  if(!state.tanks || state.tanks.length === 0){
+    state.tanks = INITIAL_SEED_TANKS;
+    await pushToCloudMaster();
+  }
 }
 
 async function loadProfiles(){
@@ -1586,7 +1623,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.0";
+  var CURRENT_VERSION = "v2.5.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -1892,9 +1929,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.5.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -2832,12 +2869,10 @@ app.excluirTanque = async function(id){
   markTankDeleted(t);
   state.tanks = state.tanks.filter(function(x){ return x.id !== id && !isTankDeleted(x); });
 
-  if(!isLocalId(id) && isOnline()){
-    try{ await sb.from("tanques").delete().eq("id", id); }catch(e){}
-  }
-
   saveCache();
   saveSharedTanks(state.tanks);
+  await pushToCloudMaster();
+  notifyOtherTabs();
   app.toast("Tanque excluído com sucesso.");
   app.goto("painel");
 };
