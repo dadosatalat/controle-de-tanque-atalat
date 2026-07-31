@@ -920,42 +920,12 @@ var INITIAL_SEED_TANKS = [
     marca: "Westfalia",
     ano_fabricacao: 2022,
     status: "estoque",
-    unidade_id: "naque",
+    unidade_id: "9adeb73d-b1f4-4d0c-87e5-a6138758900b",
     local: { municipio: "Naque - MG", latitude: "", longitude: "" },
     produtor: null,
     foto: null,
     contrato_assinado: false,
     historico: [{ id: "h1", data: todayISO(), tipo: "Troca", produtor: "—", litros: 40000, fotos: [], desc_texto: "Tanque em estoque na unidade Naque." }]
-  },
-  {
-    id: "tank_seed_2",
-    serie: "TQ-5555",
-    patrimonio: "PAT-5555",
-    capacidade: 5000,
-    marca: "Reafrio",
-    ano_fabricacao: 2023,
-    status: "estoque",
-    unidade_id: "naque",
-    local: { municipio: "Naque - MG", latitude: "", longitude: "" },
-    produtor: null,
-    foto: null,
-    contrato_assinado: false,
-    historico: [{ id: "h2", data: todayISO(), tipo: "Troca", produtor: "—", litros: 5000, fotos: [], desc_texto: "Tanque em estoque na unidade Naque." }]
-  },
-  {
-    id: "tank_seed_3",
-    serie: "TQ-5555",
-    patrimonio: "PAT-5555",
-    capacidade: 5000,
-    marca: "Reafrio",
-    ano_fabricacao: 2023,
-    status: "estoque",
-    unidade_id: "naque",
-    local: { municipio: "Naque - MG", latitude: "", longitude: "" },
-    produtor: null,
-    foto: null,
-    contrato_assinado: false,
-    historico: [{ id: "h3", data: todayISO(), tipo: "Troca", produtor: "—", litros: 5000, fotos: [], desc_texto: "Tanque em estoque na unidade Naque." }]
   },
   {
     id: "tank_seed_4",
@@ -964,8 +934,8 @@ var INITIAL_SEED_TANKS = [
     capacidade: 5000,
     marca: "Eletrofrio",
     ano_fabricacao: 2021,
-    status: "operacao",
-    unidade_id: "matriz",
+    status: "em_operacao",
+    unidade_id: "ab440a55-abed-4482-8f09-1c6fe7421069",
     local: { municipio: "Governador Valadares - MG", latitude: "", longitude: "" },
     produtor: { nome: "José Ribeiro da Silva", propriedade: "Fazenda Santa Luzia", matricula: "" },
     foto: null,
@@ -979,8 +949,8 @@ var INITIAL_SEED_TANKS = [
     capacidade: 5000,
     marca: "Plaszom",
     ano_fabricacao: 2024,
-    status: "operacao",
-    unidade_id: "matriz",
+    status: "em_operacao",
+    unidade_id: "ab440a55-abed-4482-8f09-1c6fe7421069",
     local: { municipio: "Naque - MG", latitude: "", longitude: "" },
     produtor: { nome: "Sebastião Almeida Reis", propriedade: "Fazenda Bela Vista", matricula: "" },
     foto: null,
@@ -995,27 +965,12 @@ var INITIAL_SEED_TANKS = [
     marca: "Westfalia",
     ano_fabricacao: 2020,
     status: "estoque",
-    unidade_id: "matriz",
+    unidade_id: "ab440a55-abed-4482-8f09-1c6fe7421069",
     local: { municipio: "Matriz - MG", latitude: "", longitude: "" },
     produtor: null,
     foto: null,
     contrato_assinado: false,
-    historico: [{ id: "h6", data: todayISO(), tipo: "Manutenção", produtor: "—", litros: 3000, fotos: [], desc_texto: "Tanque recolhido em estoque." }]
-  },
-  {
-    id: "tank_seed_7",
-    serie: "TQ-1003",
-    patrimonio: "PAT-2203",
-    capacidade: 4000,
-    marca: "Reafrio",
-    ano_fabricacao: 2022,
-    status: "manutencao",
-    unidade_id: "matriz",
-    local: { municipio: "Governador Valadares - MG", latitude: "", longitude: "" },
-    produtor: { nome: "Marcos Oliveira", propriedade: "Sítio Bom Jesus", matricula: "" },
-    foto: null,
-    contrato_assinado: false,
-    historico: [{ id: "h7", data: todayISO(), tipo: "Manutenção", produtor: "Marcos Oliveira", litros: 4000, fotos: [], desc_texto: "Aguardando reparo na unidade." }]
+    historico: [{ id: "h6", data: todayISO(), tipo: "Manutenção", produtor: "—", litros: 3000, fotos: [], desc_texto: "Tanque em estoque na unidade Matriz." }]
   }
 ];
 
@@ -1648,12 +1603,14 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v1.7.5";
+  var CURRENT_VERSION = "v1.8.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
     localStorage.removeItem(CACHE_KEY);
     localStorage.removeItem(QUEUE_KEY);
+    localStorage.removeItem(SHARED_TANKS_KEY);
+    localStorage.removeItem(DELETED_TANKS_KEY);
     if('serviceWorker' in navigator){
       navigator.serviceWorker.getRegistrations().then(function(regs){
         var promises = [];
@@ -1952,9 +1909,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.7.5</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.8.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.7.5</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.8.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
