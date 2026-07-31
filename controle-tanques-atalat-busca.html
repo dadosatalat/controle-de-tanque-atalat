@@ -956,21 +956,6 @@ var INITIAL_SEED_TANKS = [
     foto: null,
     contrato_assinado: true,
     historico: [{ id: "h5", data: todayISO(), tipo: "Troca", produtor: "Sebastião Almeida Reis", litros: 5000, fotos: [], desc_texto: "Tanque instalado na Fazenda Bela Vista." }]
-  },
-  {
-    id: "tank_seed_6",
-    serie: "TQ-1002",
-    patrimonio: "PAT-2202",
-    capacidade: 3000,
-    marca: "Westfalia",
-    ano_fabricacao: 2020,
-    status: "estoque",
-    unidade_id: "ab440a55-abed-4482-8f09-1c6fe7421069",
-    local: { municipio: "Matriz - MG", latitude: "", longitude: "" },
-    produtor: null,
-    foto: null,
-    contrato_assinado: false,
-    historico: [{ id: "h6", data: todayISO(), tipo: "Manutenção", produtor: "—", litros: 3000, fotos: [], desc_texto: "Tanque em estoque na unidade Matriz." }]
   }
 ];
 
@@ -1608,7 +1593,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v1.8.0";
+  var CURRENT_VERSION = "v1.9.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -1899,7 +1884,7 @@ function renderTopbarUser(){
   if(pend > 0){
     document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.8.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.9.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -2611,12 +2596,13 @@ app.salvarVisita = async function(){
 
     await loadTanques();
     saveCache();
+    saveSharedTanks(state.tanks);
     app.toast("Registro salvo com sucesso.");
     novaForm = novoFormVazio();
     novaTankBusca = "";
     app.openTank(tank.id);
   }catch(e){
-    app.toast("Sem conexão no meio do envio: salvo neste aparelho para tentar de novo depois.");
+    saveVisitaOfflineLocally();
   }
 };
 
