@@ -796,6 +796,8 @@ function mapTankFromDb(row){
     serie: row.serie,
     patrimonio: row.patrimonio,
     capacidade: row.capacidade,
+    marca: row.marca || "",
+    ano_fabricacao: row.ano_fabricacao || null,
     status: row.status,
     produtor: row.produtor_nome ? {
       nome: row.produtor_nome,
@@ -859,6 +861,8 @@ var INITIAL_SEED_TANKS = [
     serie: "TQ-5555",
     patrimonio: "PAT-5555",
     capacidade: 40000,
+    marca: "Westfalia",
+    ano_fabricacao: 2022,
     status: "estoque",
     unidade_id: "naque",
     local: { municipio: "Naque - MG", latitude: "", longitude: "" },
@@ -872,6 +876,8 @@ var INITIAL_SEED_TANKS = [
     serie: "TQ-5555",
     patrimonio: "PAT-5555",
     capacidade: 5000,
+    marca: "Reafrio",
+    ano_fabricacao: 2023,
     status: "estoque",
     unidade_id: "naque",
     local: { municipio: "Naque - MG", latitude: "", longitude: "" },
@@ -885,6 +891,8 @@ var INITIAL_SEED_TANKS = [
     serie: "TQ-5555",
     patrimonio: "PAT-5555",
     capacidade: 5000,
+    marca: "Reafrio",
+    ano_fabricacao: 2023,
     status: "estoque",
     unidade_id: "naque",
     local: { municipio: "Naque - MG", latitude: "", longitude: "" },
@@ -898,6 +906,8 @@ var INITIAL_SEED_TANKS = [
     serie: "TQ-1001",
     patrimonio: "PAT-2201",
     capacidade: 5000,
+    marca: "Eletrofrio",
+    ano_fabricacao: 2021,
     status: "operacao",
     unidade_id: "matriz",
     local: { municipio: "Governador Valadares - MG", latitude: "", longitude: "" },
@@ -911,6 +921,8 @@ var INITIAL_SEED_TANKS = [
     serie: "TQ-3001",
     patrimonio: "PAT-4401",
     capacidade: 5000,
+    marca: "Plaszom",
+    ano_fabricacao: 2024,
     status: "operacao",
     unidade_id: "matriz",
     local: { municipio: "Naque - MG", latitude: "", longitude: "" },
@@ -924,6 +936,8 @@ var INITIAL_SEED_TANKS = [
     serie: "TQ-1002",
     patrimonio: "PAT-2202",
     capacidade: 3000,
+    marca: "Westfalia",
+    ano_fabricacao: 2020,
     status: "estoque",
     unidade_id: "matriz",
     local: { municipio: "Matriz - MG", latitude: "", longitude: "" },
@@ -937,6 +951,8 @@ var INITIAL_SEED_TANKS = [
     serie: "TQ-1003",
     patrimonio: "PAT-2203",
     capacidade: 4000,
+    marca: "Reafrio",
+    ano_fabricacao: 2022,
     status: "manutencao",
     unidade_id: "matriz",
     local: { municipio: "Governador Valadares - MG", latitude: "", longitude: "" },
@@ -1555,7 +1571,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v1.5.0";
+  var CURRENT_VERSION = "v1.5.1";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -1848,9 +1864,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.5.1</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.5.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.5.1</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -2146,7 +2162,7 @@ function novoFormVazio(){
   return {
     tankId:"__novo__", tipo:"Visita de rotina", data: todayISO(),
     produtorNome:"", produtorProp:"", produtorMatricula:"", contratoAssinado:"nao",
-    municipio:"", latitude:"", longitude:"", serie:"", patrimonio:"", capacidade:"",
+    municipio:"", latitude:"", longitude:"", serie:"", patrimonio:"", capacidade:"", marca:"", ano_fabricacao:"",
     unidadeId:"", retiradaDestino:"estoque", novaUnidadeId:"", desc:"",
     fotos:{abrigo:null, plaqueta:null, geral:null, contrato:null}
   };
@@ -2192,6 +2208,8 @@ function renderNova(){
   if(isNovo){
     html += '<div class="field"><label>Número de série</label><div class="input-prefix-wrap"><span class="input-prefix">TQ-</span><input id="f_serie" inputmode="numeric" value="'+esc(cleanSerieNum(novaForm.serie))+'" oninput="app.syncField(\'serie\',this.value)" placeholder="2301"/></div></div>';
     html += '<div class="field"><label>Número de patrimônio</label><div class="input-prefix-wrap"><span class="input-prefix">PAT-</span><input id="f_patrimonio" inputmode="numeric" value="'+esc(cleanPatrimonioNum(novaForm.patrimonio))+'" oninput="app.syncField(\'patrimonio\',this.value)" placeholder="0512"/></div></div>';
+    html += '<div class="field"><label>Marca do tanque</label><input id="f_marca" value="'+esc(novaForm.marca||"")+'" oninput="app.syncField(\'marca\',this.value)" placeholder="Ex: Westfalia, Reafrio, Plaszom..."/></div>';
+    html += '<div class="field"><label>Ano de fabricação</label><input id="f_ano_fabricacao" type="number" inputmode="numeric" value="'+esc(String(novaForm.ano_fabricacao||""))+'" oninput="app.syncField(\'ano_fabricacao\',this.value)" placeholder="Ex: 2024"/></div>';
     html += '<div class="field"><label>Capacidade (litros)</label><input id="f_capacidade" type="number" value="'+esc(novaForm.capacidade)+'" oninput="app.syncField(\'capacidade\',this.value)" placeholder="Ex: 4000"/></div>';
     if(shouldShowUnidadeSelect()){
       html += '<div class="field"><label>Unidade</label><select id="f_unidade" onchange="app.syncField(\'unidadeId\',this.value)">'+
@@ -2574,7 +2592,8 @@ app.editarTanque = function(id){
   var t = findTank(id);
   if(!t) return;
   editTankForm = {
-    id: t.id, serie: t.serie, patrimonio: t.patrimonio, capacidade: t.capacidade, status: t.status,
+    id: t.id, serie: t.serie, patrimonio: t.patrimonio, capacidade: t.capacidade,
+    marca: t.marca || "", ano_fabricacao: t.ano_fabricacao || "", status: t.status,
     produtorMatricula: t.produtor ? (t.produtor.matricula || "") : "",
     produtorNome: t.produtor ? t.produtor.nome : "", produtorProp: t.produtor ? t.produtor.propriedade : "",
     contratoAssinado: t.contrato_assinado ? "sim" : "nao",
@@ -2593,6 +2612,8 @@ function renderEditarTanque(){
   var html = '';
   html += '<div class="field"><label>Número de série</label><div class="input-prefix-wrap"><span class="input-prefix">TQ-</span><input id="e_serie" inputmode="numeric" value="'+esc(cleanSerieNum(editTankForm.serie))+'" placeholder="2301"/></div></div>';
   html += '<div class="field"><label>Número de patrimônio</label><div class="input-prefix-wrap"><span class="input-prefix">PAT-</span><input id="e_patrimonio" inputmode="numeric" value="'+esc(cleanPatrimonioNum(editTankForm.patrimonio))+'" placeholder="0512"/></div></div>';
+  html += '<div class="field"><label>Marca do tanque</label><input id="e_marca" value="'+esc(editTankForm.marca||"")+'" placeholder="Ex: Westfalia, Reafrio, Plaszom..."/></div>';
+  html += '<div class="field"><label>Ano de fabricação</label><input id="e_ano_fabricacao" type="number" inputmode="numeric" value="'+esc(String(editTankForm.ano_fabricacao||""))+'" placeholder="Ex: 2024"/></div>';
   html += '<div class="field"><label>Capacidade (litros)</label><input id="e_capacidade" type="number" value="'+esc(String(editTankForm.capacidade||""))+'"/></div>';
   html += '<div class="field"><label>Status</label><select id="e_status">'+
     Object.keys(STATUS_LABEL_MAP).map(function(k){ return '<option value="'+k+'" '+(editTankForm.status===k?'selected':'')+'>'+STATUS_LABEL_MAP[k]+'</option>'; }).join('')+
@@ -2651,7 +2672,9 @@ app.salvarEdicaoTanque = async function(){
   var rawPatrimonio = (document.getElementById("e_patrimonio").value||"").trim();
   var serie = formatSerie(rawSerie);
   var patrimonio = formatPatrimonio(rawPatrimonio);
-  var capacidade = parseInt(document.getElementById("e_capacidade").value||"0", 10);
+  var capacidade = parseInt(document.getElementById("e_capacidade").value, 10) || 0;
+  var marca = (document.getElementById("e_marca").value || "").trim();
+  var anoFab = parseInt(document.getElementById("e_ano_fabricacao").value, 10) || null;
   var status = document.getElementById("e_status").value;
   var prodMatricula = (document.getElementById("e_prodmatricula").value||"").trim();
   var prodNome = (document.getElementById("e_prodnome").value||"").trim();
@@ -2671,6 +2694,8 @@ app.salvarEdicaoTanque = async function(){
     serie: serie,
     patrimonio: patrimonio,
     capacidade: capacidade,
+    marca: marca,
+    ano_fabricacao: anoFab,
     status: status,
     produtor_nome: prodNome || null,
     produtor_propriedade: prodProp || null,
@@ -2694,6 +2719,7 @@ app.salvarEdicaoTanque = async function(){
 
   if(isLocalId(t.id) || !isOnline()){
     t.serie = serie; t.patrimonio = patrimonio; t.capacidade = capacidade||0; t.status = status;
+    t.marca = marca; t.ano_fabricacao = anoFab;
     t.produtor = prodNome ? {nome: prodNome, propriedade: prodProp} : null;
     t.local.municipio = municipio; t.local.latitude = latitude||null; t.local.longitude = longitude||null;
     if(!isLocalId(t.id)){
@@ -2713,7 +2739,8 @@ app.salvarEdicaoTanque = async function(){
     app.toast("Tanque atualizado.");
     app.openTank(t.id);
   }catch(e){
-    t.serie = serie; t.patrimonio = patrimonio; t.capacidade = capacity||0; t.status = status;
+    t.serie = serie; t.patrimonio = patrimonio; t.capacidade = capacidade||0; t.status = status;
+    t.marca = marca; t.ano_fabricacao = anoFab;
     t.produtor = prodNome ? {nome: prodNome, propriedade: prodProp} : null;
     t.local.municipio = municipio; t.local.latitude = latitude||null; t.local.longitude = longitude||null;
     enqueueOp("editar_tanque", {tanqueId: t.id, patch: patch});
@@ -3003,8 +3030,10 @@ function renderRelatorio(){
   var temContratoStr = t.contrato_assinado ? "Assinado" : (t.produtor ? "Pendente" : "Sem contrato");
 
   var prod = t.produtor ? fmtProdutorDisplay(t.produtor) : 'Sem produtor vinculado';
+  html += '<div class="info-box" style="margin-bottom:6px;"><div class="l">Série / Patrimônio</div><div class="v">'+esc(t.serie)+' · '+esc(t.patrimonio)+'</div></div>';
+  html += '<div class="info-box" style="margin-bottom:6px;"><div class="l">Capacidade</div><div class="v">'+(t.capacidade ? t.capacidade.toLocaleString("pt-BR")+" L" : "—")+'</div></div>';
+  html += '<div class="info-box" style="margin-bottom:6px;"><div class="l">Marca / Ano de Fabricação</div><div class="v">'+esc(t.marca || "Não informada")+' · Ano '+(t.ano_fabricacao || "—")+'</div></div>';
   html += '<div class="info-grid">'+
-    '<div class="info-box"><div class="l">Capacidade</div><div class="v">'+t.capacidade.toLocaleString('pt-BR')+' L</div></div>'+
     '<div class="info-box"><div class="l">Status Atual</div><div class="v">'+STATUS_LABEL(t.status)+'</div></div>'+
   '</div>';
   html += '<div class="info-grid">'+
