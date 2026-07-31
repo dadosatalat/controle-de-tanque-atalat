@@ -709,7 +709,24 @@ function hasPerm(perm){
   var perms = ROLE_PERMS[state.me.papel];
   return perms ? !!perms[perm] : false;
 }
-function findTank(id){ return state.tanks.filter(function(t){ return t.id===id; })[0]; }
+function tankMunicipio(t){
+  if(!t) return "—";
+  if(t.local && t.local.municipio) return t.local.municipio;
+  if(t.municipio) return t.municipio;
+  return "—";
+}
+function tankLat(t){
+  if(!t) return null;
+  if(t.local && t.local.latitude) return t.local.latitude;
+  if(t.latitude) return t.latitude;
+  return null;
+}
+function tankLng(t){
+  if(!t) return null;
+  if(t.local && t.local.longitude) return t.local.longitude;
+  if(t.longitude) return t.longitude;
+  return null;
+}
 function getUnidadeUuid(unid){
   if(!unid) return "ab440a55-abed-4482-8f09-1c6fe7421069";
   var str = String(unid).toLowerCase().trim();
@@ -1634,7 +1651,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.5.1";
+  var CURRENT_VERSION = "v2.5.2";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -1925,7 +1942,7 @@ function renderTopbarUser(){
   if(pend > 0){
     document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.5.1</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.5.2</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -1990,7 +2007,7 @@ function renderPainel(){
   var list = baseTanks.filter(function(t){
     if(state.statusFilter && t.status !== state.statusFilter) return false;
     if(!q) return true;
-    var hay = [t.serie, t.patrimonio, t.produtor?t.produtor.nome:"", t.produtor?t.produtor.propriedade:"", t.local.municipio].join(" ").toLowerCase();
+    var hay = [t.serie, t.patrimonio, t.produtor?t.produtor.nome:"", t.produtor?t.produtor.propriedade:"", tankMunicipio(t)].join(" ").toLowerCase();
     return hay.indexOf(q) !== -1;
   });
 
@@ -2028,7 +2045,7 @@ function renderPainel(){
           '<span class="badge '+STATUS_CLASS(t.status)+'">'+STATUS_LABEL(t.status)+'</span>'+
         '</div>'+
         '<div class="tank-meta" style="margin-top:8px;">'+prodLine+'</div>'+
-        '<div class="tank-meta">'+esc(t.local.municipio)+'</div>'+
+        '<div class="tank-meta">'+esc(tankMunicipio(t))+'</div>'+
         (shouldShowUnidadeSelect() ? '<div style="margin-top:6px;"><span class="badge b-unidade">'+esc(unidadeNome(t.unidade_id))+'</span></div>' : '')+
       '</div>';
     });
@@ -2077,8 +2094,8 @@ function renderDetalhe(){
   if(!t.produtor && hasPerm("criar")){
     html += '<button class="btn btn-primary no-print" style="margin-bottom:12px;" onclick="app.vincularProdutor(\''+t.id+'\')">Vincular produtor</button>';
   }
-  var mLink = mapsLink(t.local.latitude, t.local.longitude);
-  html += '<div class="info-box" style="margin-bottom:6px;"><div class="l">Localização</div><div class="v" style="font-size:12.5px;font-weight:500;">'+esc(t.local.municipio)+' · '+fmtLatLng(t.local.latitude, t.local.longitude)+
+  var mLink = mapsLink(tankLat(t), tankLng(t));
+  html += '<div class="info-box" style="margin-bottom:6px;"><div class="l">Localização</div><div class="v" style="font-size:12.5px;font-weight:500;">'+esc(tankMunicipio(t))+' · '+fmtLatLng(tankLat(t), tankLng(t))+
     (mLink ? ' · <a class="maps-link no-print" href="'+mLink+'" target="_blank" rel="noopener">Abrir no mapa</a>' : '')+
   '</div></div>';
   html += '<div class="info-box" style="margin-bottom:12px;"><div class="l">Unidade</div><div class="v">'+esc(unidadeNome(t.unidade_id))+'</div></div>';
@@ -3135,7 +3152,7 @@ function renderRelatorio(){
     '<div class="info-box"><div class="l">Instalado Por</div><div class="v" style="font-size:12.5px;">'+instaladorStr+'</div></div>'+
   '</div>';
   html += '<div class="info-box" style="margin-bottom:6px;"><div class="l">Produtor Atual / Contrato</div><div class="v" style="font-size:13px;">'+prod+' · <strong>Contrato: '+temContratoStr+'</strong></div></div>';
-  html += '<div class="info-box"><div class="l">Localização & Coordenadas GPS</div><div class="v" style="font-size:12.5px;font-weight:500;">'+esc(t.local.municipio)+' · '+fmtLatLng(t.local.latitude, t.local.longitude)+'</div></div>';
+  html += '<div class="info-box"><div class="l">Localização & Coordenadas GPS</div><div class="v" style="font-size:12.5px;font-weight:500;">'+esc(tankMunicipio(t))+' · '+fmtLatLng(tankLat(t), tankLng(t))+'</div></div>';
 
   if(t.foto){
     html += '<div class="info-box" style="margin-top:6px;margin-bottom:6px;"><div class="l">Foto Principal do Tanque</div>'+
