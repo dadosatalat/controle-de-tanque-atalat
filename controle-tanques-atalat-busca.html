@@ -1593,7 +1593,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v1.9.0";
+  var CURRENT_VERSION = "v1.9.1";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -1884,7 +1884,7 @@ function renderTopbarUser(){
   if(pend > 0){
     document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.9.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.9.1</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -2415,7 +2415,10 @@ app.salvarVisita = async function(){
     }
   }
 
-  if(invalid) return;
+  if(invalid){
+    app.toast("⚠️ Preencha os campos obrigatórios marcados em vermelho!");
+    return;
+  }
 
   var offline = !isOnline();
 
@@ -2602,7 +2605,47 @@ app.salvarVisita = async function(){
     novaTankBusca = "";
     app.openTank(tank.id);
   }catch(e){
-    saveVisitaOfflineLocally();
+    if(novaForm.tankId === "__novo__"){
+      var tempId = localId("tanque");
+      var novoTank = {
+        id: tempId, serie: serie, patrimonio: patrimonio, capacidade: capacidade||0, status: "estoque",
+        marca: novaForm.marca || "", ano_fabricacao: novaForm.ano_fabricacao || null,
+        produtor: novaForm.produtorNome ? {nome: novaForm.produtorNome, propriedade: novaForm.produtorProp, matricula: novaForm.produtorMatricula} : null,
+        local: {latitude: novaForm.latitude||null, longitude: novaForm.longitude||null, municipio: novaForm.municipio},
+        foto: novaForm.fotos.geral || novaForm.fotos.abrigo || null, unidade_id: unidadeId, pendente: true,
+        contrato_assinado: (novaForm.contratoAssinado === "sim"),
+        historico: [{id: localId("hist"), data: novaForm.data, tipo: novaForm.tipo, produtor: novaForm.produtorNome||"—", litros: capacidade||0, desc: novaForm.desc||"(sem observações)", fotos: Object.keys(novaForm.fotos).map(function(k){return novaForm.fotos[k];}).filter(Boolean), pendente: true}]
+      };
+      state.tanks.unshift(novoTank);
+      enqueueOp("novo_tanque_com_visita", {
+        tanqueIdLocal: tempId, serie: serie, patrimonio: patrimonio, capacidade: capacidade||0, marca: novaForm.marca||"", ano_fabricacao: novaForm.ano_fabricacao||null,
+        unidadeId: unidadeId, municipio: novaForm.municipio, latitude: novaForm.latitude||null, longitude: novaForm.longitude||null,
+        produtorNome: novaForm.produtorNome, produtorProp: novaForm.produtorProp,
+        data: novaForm.data, tipo: novaForm.tipo, desc: novaForm.desc, fotosBase64: novaForm.fotos
+      });
+      saveCache();
+      saveSharedTanks(state.tanks);
+      app.toast("✅ Salvo no aparelho! Será enviado quando a internet voltar.");
+      novaForm = novoFormVazio();
+      novaTankBusca = "";
+      app.openTank(tempId);
+    } else {
+      var tOff = findTank(novaForm.tankId);
+      if(tOff){
+        var fotosArrOff = Object.keys(novaForm.fotos).map(function(k){return novaForm.fotos[k];}).filter(Boolean);
+        tOff.historico.unshift({id: localId("hist"), data: novaForm.data, tipo: novaForm.tipo, produtor: novaForm.produtorNome||"—", litros: tOff.capacidade, desc: novaForm.desc||"(sem observações)", fotos: fotosArrOff, pendente: true});
+        enqueueOp("nova_visita_existente", {
+          tanqueId: tOff.id, unidadeId: tOff.unidade_id, patchTank: {}, data: novaForm.data, tipo: novaForm.tipo,
+          produtorNome: novaForm.produtorNome, litros: tOff.capacidade, desc: novaForm.desc, fotosBase64: novaForm.fotos
+        });
+        saveCache();
+        saveSharedTanks(state.tanks);
+        app.toast("✅ Salvo no aparelho! Será enviado quando a internet voltar.");
+        novaForm = novoFormVazio();
+        novaTankBusca = "";
+        app.openTank(tOff.id);
+      }
+    }
   }
 };
 
