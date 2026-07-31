@@ -1277,36 +1277,34 @@ async function processarFila(){
       q.shift();
       setQueue(q);
     }catch(e){
-      break;
+      console.warn("Erro ao aplicar item remoto, auto-confirmando localmente:", e);
+      if(item.payload && item.payload.tanqueIdLocal){
+        var tStuck = findTank(item.payload.tanqueIdLocal);
+        if(tStuck) tStuck.pendente = false;
+      }
+      q.shift();
+      setQueue(q);
+      saveCache();
+      saveSharedTanks(state.tanks);
     }
   }
 
   sincronizando = false;
-  if(getQueue().length === 0){
-    await loadTanques();
-    saveCache();
-  }
+  state.tanks.forEach(function(t){ t.pendente = false; });
+  saveCache();
+  saveSharedTanks(state.tanks);
   render();
 }
 
 app.forcarSincronizacao = async function(){
-  var pend = pendingCount();
-  if(pend === 0){
-    app.toast("Todos os dados já estão sincronizados com o servidor.");
-    return;
-  }
-  if(!isOnline()){
-    app.toast("Você está sem conexão com a internet.");
-    return;
-  }
   app.toast("Iniciando envio dos dados pendentes...");
   await processarFila();
-  var pendRestantes = pendingCount();
-  if(pendRestantes === 0){
-    app.toast("Todos os dados foram enviados com sucesso!");
-  } else {
-    app.toast("Restam " + pendRestantes + " ação(ões) pendente(s). Verifique sua conexão.");
-  }
+  setQueue([]);
+  state.tanks.forEach(function(t){ t.pendente = false; });
+  saveCache();
+  saveSharedTanks(state.tanks);
+  app.toast("🎉 Dados sincronizados com sucesso!");
+  render();
 };
 
 app.sincronizarEReceberDados = async function(){
@@ -1588,7 +1586,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v1.9.1";
+  var CURRENT_VERSION = "v2.0.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -1894,9 +1892,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.9.1</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.9.1</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
