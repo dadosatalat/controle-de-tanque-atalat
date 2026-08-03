@@ -1193,6 +1193,38 @@ function setDirectPassword(email, password){
   try{ localStorage.setItem(DIRECT_PASS_KEY, JSON.stringify(passes)); }catch(e){}
 }
 
+var DELETED_PROFILES_KEY = "atalat_deleted_profiles_v1";
+
+function getDeletedProfiles(){
+  try{
+    var raw = localStorage.getItem(DELETED_PROFILES_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return [];
+}
+
+function markProfileDeleted(p){
+  if(!p) return;
+  var list = getDeletedProfiles();
+  var u1 = (typeof p === "string" ? p : p.id || "").toLowerCase().trim();
+  var u2 = (typeof p === "object" && p ? p.usuario || p.email || "" : "").toLowerCase().trim();
+  if(u1 && list.indexOf(u1) === -1) list.push(u1);
+  if(u2 && list.indexOf(u2) === -1) list.push(u2);
+  try{ localStorage.setItem(DELETED_PROFILES_KEY, JSON.stringify(list)); }catch(e){}
+}
+
+function isProfileDeleted(p){
+  if(!p) return false;
+  var list = getDeletedProfiles();
+  if(!Array.isArray(list) || list.length === 0) return false;
+  var u1 = (typeof p === "string" ? p : p.id || "").toLowerCase().trim();
+  var u2 = (typeof p === "object" && p ? p.usuario || p.email || "" : "").toLowerCase().trim();
+  return list.some(function(d){
+    var dNorm = String(d).toLowerCase().trim();
+    return (u1 && dNorm === u1) || (u2 && dNorm === u2);
+  });
+}
+
 function getDirectProfiles(){
   var localProfs = {};
   try{
@@ -1718,27 +1750,40 @@ async function loadProfiles(){
     var res = await sb.from("profiles").select("*").order("nome");
     var map = new Map();
 
-    DEFAULT_PROFILES.forEach(function(p){ map.set(p.usuario.toLowerCase(), p); });
-    directList.forEach(function(p){ if(p && p.usuario) map.set(p.usuario.toLowerCase(), p); });
+    DEFAULT_PROFILES.forEach(function(p){
+      if(!isProfileDeleted(p)){
+        map.set(p.usuario.toLowerCase().trim(), p);
+      }
+    });
+
+    directList.forEach(function(p){
+      if(p && p.usuario && !isProfileDeleted(p)){
+        map.set(p.usuario.toLowerCase().trim(), p);
+      }
+    });
 
     if(res && res.data && res.data.length > 0){
       res.data.forEach(function(p){
-        var key = (p.usuario || p.email || p.id || "").toLowerCase();
-        if(key) map.set(key, {
-          id: p.id || key,
-          nome: p.nome || p.usuario || p.email || key,
-          usuario: p.usuario || p.email || key,
-          papel: p.papel || "operador",
-          unidade_id: p.unidade_id || null
-        });
+        var key = (p.usuario || p.email || p.id || "").toLowerCase().trim();
+        if(key && !isProfileDeleted(p)){
+          map.set(key, {
+            id: p.id || key,
+            nome: p.nome || p.usuario || p.email || key,
+            usuario: p.usuario || p.email || key,
+            papel: p.papel || "operador",
+            unidade_id: p.unidade_id || null
+          });
+        }
       });
     }
 
-    state.profiles = Array.from(map.values());
+    state.profiles = Array.from(map.values()).filter(function(p){
+      return !isProfileDeleted(p);
+    });
   }catch(e){
     var mapErr = new Map();
-    DEFAULT_PROFILES.forEach(function(p){ mapErr.set(p.usuario.toLowerCase(), p); });
-    directList.forEach(function(p){ if(p && p.usuario) mapErr.set(p.usuario.toLowerCase(), p); });
+    DEFAULT_PROFILES.forEach(function(p){ if(!isProfileDeleted(p)) mapErr.set(p.usuario.toLowerCase().trim(), p); });
+    directList.forEach(function(p){ if(p && p.usuario && !isProfileDeleted(p)) mapErr.set(p.usuario.toLowerCase().trim(), p); });
     state.profiles = Array.from(mapErr.values());
   }
 }
@@ -1816,7 +1861,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v4.5.0";
+  var CURRENT_VERSION = "v4.6.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2125,9 +2170,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v4.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v4.6.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v4.5.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v4.6.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3511,20 +3556,22 @@ app.salvarUsuario = async function(){
 
 app.excluirUsuario = async function(id){
   if(!hasPerm("gerenciarUsuarios")){ app.toast("Seu usuário não tem permissão para gerenciar usuários."); return; }
-  if(id === state.me.id){ app.toast("Você não pode remover a própria conta."); return; }
   var target = findProfile(id);
   if(!target) return;
+
+  var targetEmail = (target.usuario || target.email || "").toLowerCase().trim();
   
-  var admins = state.profiles.filter(function(u){ return u.papel === "admin"; });
-  if(target.papel === "admin" && admins.length <= 1){
-    app.toast("É preciso manter ao menos um administrador.");
+  if(targetEmail === "italo.pauloip01@gmail.com" || (state.me && targetEmail === (state.me.usuario||"").toLowerCase().trim())){
+    app.toast("⚠️ A conta principal do proprietário (Italo Silva) não pode ser removida.");
     return;
   }
-  
+
   if(!confirm("Remover permanentemente o acesso e a conta de "+(target.nome || target.usuario)+"?")) return;
 
+  markProfileDeleted(target);
+
   state.profiles = state.profiles.filter(function(u){
-    return u.id !== id && (u.usuario||"").toLowerCase() !== (target.usuario||"").toLowerCase();
+    return !isProfileDeleted(u);
   });
 
   try{ saveDirectProfiles(state.profiles); }catch(e){}
@@ -3532,8 +3579,8 @@ app.excluirUsuario = async function(id){
 
   try{
     var passes = JSON.parse(localStorage.getItem(DIRECT_AUTH_KEY) || "{}");
-    if(target.usuario && passes[target.usuario.toLowerCase()]) {
-      delete passes[target.usuario.toLowerCase()];
+    if(targetEmail && passes[targetEmail]) {
+      delete passes[targetEmail];
       localStorage.setItem(DIRECT_AUTH_KEY, JSON.stringify(passes));
     }
   }catch(e){}
