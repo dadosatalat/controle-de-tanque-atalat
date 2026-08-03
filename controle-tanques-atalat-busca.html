@@ -935,7 +935,7 @@ function fetchWithTimeout(url, options, ms){
 
 async function pushToCloudMaster(){
   try{
-    state.tanks = dedupeTanks(state.tanks||[]);
+    state.tanks = dedupeTanks(state.tanks||[]).map(sanitizeTank).filter(Boolean);
     var cleanTanks = (state.tanks||[]).map(function(t){
       var copy = Object.assign({}, t);
       delete copy.pendente;
@@ -947,38 +947,17 @@ async function pushToCloudMaster(){
       deleted: getDeletedTanks()
     });
 
-    var options = {
+    await fetchWithTimeout(CLOUD_MASTER_URL, {
       method: "PUT",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: payloadStr
-    };
-
-    Promise.allSettled([
-      fetchWithTimeout(PRIMARY_CLOUD_URL, options, 4000),
-      fetchWithTimeout(BACKUP_CLOUD_URL, options, 4000)
-    ]);
+    }, 4000);
   }catch(e){}
 }
 
 async function pullFromCloudMaster(){
   try{
-    var ts = Date.now();
-    var pPrimary = fetchWithTimeout(PRIMARY_CLOUD_URL + "?t=" + ts, {}, 3500);
-    var pBackup = fetchWithTimeout(BACKUP_CLOUD_URL + "?t=" + ts, {}, 3500);
-
-    var res = await Promise.race([
-      pPrimary.then(function(r){ if(r && r.ok) return r; throw new Error("primary fail"); }),
-      pBackup.then(function(r){ if(r && r.ok) return r; throw new Error("backup fail"); })
-    ]).catch(async function(){
-      var settled = await Promise.allSettled([pPrimary, pBackup]);
-      for(var i=0; i<settled.length; i++){
-        if(settled[i].status === "fulfilled" && settled[i].value && settled[i].value.ok){
-          return settled[i].value;
-        }
-      }
-      return null;
-    });
-
+    var res = await fetchWithTimeout(CLOUD_MASTER_URL + "?t=" + Date.now(), {}, 4000);
     if(res && res.ok){
       var json = await res.json();
       var tanksList = Array.isArray(json.tanks) ? json.tanks : (json.data && Array.isArray(json.data.tanks) ? json.data.tanks : null);
@@ -992,11 +971,7 @@ async function pullFromCloudMaster(){
         });
         try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify(localDeleted)); }catch(e){}
 
-        var filtered = cloudTanks.filter(function(t){
-          return !isTankDeleted(t);
-        });
-
-        state.tanks = dedupeTanks(filtered);
+        state.tanks = mergeTanks(state.tanks, cloudTanks, localDeleted);
         saveSharedTanks(state.tanks);
         saveCache();
       }
@@ -1723,7 +1698,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v4.0.0";
+  var CURRENT_VERSION = "v4.1.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2014,7 +1989,7 @@ function renderTopbarUser(){
   if(pend > 0){
     document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v4.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v4.1.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -2134,8 +2109,14 @@ app.onUnidadeFilter = function(v){ state.unidadeFilter = v; renderPainel(); };
 
 var STATUS_LABEL_MAP = {em_operacao:"Em operação", manutencao:"Em manutenção", estoque:"Em estoque", inativo:"Inativo"};
 var STATUS_CLASS_MAP = {em_operacao:"b-op", manutencao:"b-manut", estoque:"b-estoque", inativo:"b-inativo"};
-function STATUS_LABEL(s){ return STATUS_LABEL_MAP[s] || s; }
-function STATUS_CLASS(s){ return STATUS_CLASS_MAP[s] || ""; }
+function STATUS_LABEL(s){
+  if(!s || s === "undefined" || s === "null") s = "estoque";
+  return STATUS_LABEL_MAP[s] || "Em estoque";
+}
+function STATUS_CLASS(s){
+  if(!s || s === "undefined" || s === "null") s = "estoque";
+  return STATUS_CLASS_MAP[s] || "b-estoque";
+}
 
 // ---------- DETALHE ----------
 function renderDetalhe(){
