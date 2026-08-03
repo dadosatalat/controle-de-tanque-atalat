@@ -1285,19 +1285,30 @@ function checkActiveUserRevocation(){
   }
 }
 
+function canonicalUserKey(p){
+  if(!p) return "";
+  var raw = (typeof p === "string" ? p : (p.usuario || p.email || p.id || p.nome || "")).toString().toLowerCase().trim();
+  if(raw.indexOf("italo") !== -1 || raw.indexOf("pauloip") !== -1) return "italo.pauloip01@gmail.com";
+  if(raw.indexOf("nelinton") !== -1 || raw.indexOf("filialnaque") !== -1) return "atalat.filialnaque@gmail.com";
+  if(raw.indexOf("admin.atalat") !== -1 || raw.indexOf("prof_admin") !== -1) return "admin.atalat@gmail.com";
+  if(raw.indexOf("master.atalat") !== -1 || raw.indexOf("prof_master") !== -1) return "master.atalat@gmail.com";
+  return raw.replace(/[^a-z0-9@._-]/g, "");
+}
+
 function dedupeProfiles(list){
   var map = new Map();
   (list || []).forEach(function(p){
     if(!p || isProfileDeleted(p)) return;
-    var userKey = (p.usuario || p.email || "").toString().toLowerCase().trim();
-    if(!userKey || /^\d+$/.test(userKey)) return;
+    var cKey = canonicalUserKey(p);
+    if(!cKey || /^\d+$/.test(cKey)) return;
     
-    if(!map.has(userKey)){
-      map.set(userKey, p);
+    if(!map.has(cKey)){
+      map.set(cKey, p);
     } else {
-      var ext = map.get(userKey);
-      if(p.papel === "admin" && ext.papel !== "admin") map.set(userKey, p);
-      else if(p.unidade_id && !ext.unidade_id) map.set(userKey, p);
+      var ext = map.get(cKey);
+      if((p.usuario && p.usuario.indexOf("@") !== -1) && (!ext.usuario || ext.usuario.indexOf("@") === -1)){
+        map.set(cKey, p);
+      }
     }
   });
   return Array.from(map.values());
@@ -1919,7 +1930,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v6.2.0";
+  var CURRENT_VERSION = "v7.0.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2222,7 +2233,7 @@ function renderTopbarUser(){
   if(pend > 0){
     document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v6.2.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v7.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
