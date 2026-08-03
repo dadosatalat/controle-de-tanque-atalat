@@ -917,8 +917,7 @@ var DIRECT_PASS_KEY = "atalat_direct_passwords_v1";
 var DIRECT_PROFILES_KEY = "atalat_direct_profiles_v1";
 var SHARED_TANKS_KEY = "atalat_shared_tanks_v1";
 var DELETED_TANKS_KEY = "atalat_deleted_tanks_v3";
-var PRIMARY_CLOUD_URL = "https://jsonblob.com/api/jsonBlob/019fc77a-3375-76b8-9640-eb7f27115394";
-var BACKUP_CLOUD_URL = "https://jsonblob.com/api/jsonBlob/019fc788-8715-752f-b932-4a6214193202";
+var CLOUD_MASTER_URL = "https://jsonblob.com/api/jsonBlob/019fc77a-3375-76b8-9640-eb7f27115394";
 
 function fetchWithTimeout(url, options, ms){
   return new Promise(function(resolve){
@@ -931,6 +930,50 @@ function fetchWithTimeout(url, options, ms){
       resolve(null);
     });
   });
+}
+
+function sanitizeTank(t){
+  if(!t) return null;
+  var copy = Object.assign({}, t);
+  if(!copy.status || copy.status === "undefined" || copy.status === "null"){
+    copy.status = (copy.produtor && copy.produtor.nome) ? "em_operacao" : "estoque";
+  }
+  if(!copy.local) copy.local = { municipio: "Naque - MG", latitude: "", longitude: "" };
+  if(!copy.local.municipio) copy.local.municipio = "Naque - MG";
+  return copy;
+}
+
+function mergeTanks(localList, cloudList, deletedList){
+  var map = new Map();
+  (localList || []).forEach(function(t){
+    var clean = sanitizeTank(t);
+    if(clean && clean.serie){
+      var key = clean.serie.toString().trim().toUpperCase();
+      map.set(key, clean);
+    }
+  });
+
+  (cloudList || []).forEach(function(t){
+    var clean = sanitizeTank(t);
+    if(clean && clean.serie){
+      var key = clean.serie.toString().trim().toUpperCase();
+      if(!map.has(key)){
+        map.set(key, clean);
+      } else {
+        var ext = map.get(key);
+        var extHist = Array.isArray(ext.historico) ? ext.historico.length : 0;
+        var cloudHist = Array.isArray(clean.historico) ? clean.historico.length : 0;
+        if(cloudHist >= extHist){
+          map.set(key, clean);
+        }
+      }
+    }
+  });
+
+  var result = Array.from(map.values()).filter(function(t){
+    return !isTankDeleted(t);
+  });
+  return result;
 }
 
 async function pushToCloudMaster(){
