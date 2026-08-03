@@ -1916,7 +1916,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v6.0.0";
+  var CURRENT_VERSION = "v6.1.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2105,25 +2105,29 @@ app.criarConta = async function(){
   if(!senha || senha.length < 6){ markInvalid("a_senha2", "Senha deve ter ao menos 6 caracteres."); invalid = true; }
   if(invalid) return;
 
+  setDirectProfile(email, { papel: "operador", unidade_id: null, nome: nome });
   setDirectPassword(email, senha);
 
   var newProf = { id: localId("user"), nome: nome, usuario: email, papel: "operador", unidade_id: null };
   try{
     var res = await sb.auth.signUp({
       email: email, password: senha,
-  state.profiles = dedupeProfiles([].concat(state.profiles||[], [{
-    id: email,
-    nome: nome,
-    usuario: email,
-    email: email,
-    papel: "operador",
-    unidade_id: null
-  }]));
+      options: {data: {nome: nome, usuario: email, papel: "operador"}}
+    });
+    if(res.data && res.data.user) newProf.id = res.data.user.id;
+  }catch(e){}
+
+  try{ await sb.from("profiles").upsert(newProf); }catch(profErr){}
+
+  state.profiles = dedupeProfiles([].concat(state.profiles||[], [newProf]));
   try{ saveDirectProfiles(state.profiles); }catch(e){}
 
   await pushToCloudMaster();
 
-  app.toast("✅ Conta criada com sucesso! Você já pode entrar.");
+  state.me = newProf;
+  state.session = { user: { id: newProf.id, email: email } };
+  saveCache();
+  app.toast("🎉 Conta criada com sucesso! Você já tem permissão para visualizar e editar os dados da plataforma.");
   bootAfterAuthChange();
 };
 
@@ -2230,9 +2234,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v6.0.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v6.1.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v6.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v6.1.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
