@@ -1225,6 +1225,24 @@ function isProfileDeleted(p){
   });
 }
 
+function dedupeProfiles(list){
+  var map = new Map();
+  (list || []).forEach(function(p){
+    if(!p || isProfileDeleted(p)) return;
+    var userKey = (p.usuario || p.email || "").toString().toLowerCase().trim();
+    if(!userKey || /^\d+$/.test(userKey)) return;
+    
+    if(!map.has(userKey)){
+      map.set(userKey, p);
+    } else {
+      var ext = map.get(userKey);
+      if(p.papel === "admin" && ext.papel !== "admin") map.set(userKey, p);
+      else if(p.unidade_id && !ext.unidade_id) map.set(userKey, p);
+    }
+  });
+  return Array.from(map.values());
+}
+
 function getDirectProfiles(){
   var localProfs = {};
   try{
@@ -1725,6 +1743,7 @@ async function loadTanques(){
 async function loadProfiles(){
   var directObj = getDirectProfiles();
   var directList = Object.keys(directObj||{}).map(function(k){
+    if(/^\d+$/.test(k)) return null;
     var p = directObj[k];
     return {
       id: (p && p.id) || k,
@@ -1733,7 +1752,7 @@ async function loadProfiles(){
       papel: (p && p.papel) || "operador",
       unidade_id: (p && p.unidade_id) || null
     };
-  });
+  }).filter(Boolean);
 
   var DEFAULT_PROFILES = [
     { id: "prof_italo", nome: "Italo Silva", usuario: "italo.pauloip01@gmail.com", papel: "admin", unidade_id: null },
@@ -1742,27 +1761,17 @@ async function loadProfiles(){
     { id: "prof_master", nome: "Master Atalát", usuario: "master.atalat@gmail.com", papel: "admin", unidade_id: null }
   ];
 
+  var combined = [];
+  DEFAULT_PROFILES.forEach(function(p){ combined.push(p); });
+  directList.forEach(function(p){ combined.push(p); });
+
   try{
     var res = await sb.from("profiles").select("*").order("nome");
-    var map = new Map();
-
-    DEFAULT_PROFILES.forEach(function(p){
-      if(!isProfileDeleted(p)){
-        map.set(p.usuario.toLowerCase().trim(), p);
-      }
-    });
-
-    directList.forEach(function(p){
-      if(p && p.usuario && !isProfileDeleted(p)){
-        map.set(p.usuario.toLowerCase().trim(), p);
-      }
-    });
-
     if(res && res.data && res.data.length > 0){
       res.data.forEach(function(p){
         var key = (p.usuario || p.email || p.id || "").toLowerCase().trim();
-        if(key && !isProfileDeleted(p)){
-          map.set(key, {
+        if(key && !/^\d+$/.test(key)){
+          combined.push({
             id: p.id || key,
             nome: p.nome || p.usuario || p.email || key,
             usuario: p.usuario || p.email || key,
@@ -1772,16 +1781,9 @@ async function loadProfiles(){
         }
       });
     }
+  }catch(e){}
 
-    state.profiles = Array.from(map.values()).filter(function(p){
-      return !isProfileDeleted(p);
-    });
-  }catch(e){
-    var mapErr = new Map();
-    DEFAULT_PROFILES.forEach(function(p){ if(!isProfileDeleted(p)) mapErr.set(p.usuario.toLowerCase().trim(), p); });
-    directList.forEach(function(p){ if(p && p.usuario && !isProfileDeleted(p)) mapErr.set(p.usuario.toLowerCase().trim(), p); });
-    state.profiles = Array.from(mapErr.values());
-  }
+  state.profiles = dedupeProfiles(combined);
 }
 
 // ---------- REALTIME ----------
@@ -1857,7 +1859,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v4.6.0";
+  var CURRENT_VERSION = "v4.7.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2151,7 +2153,7 @@ function renderTopbarUser(){
   if(pend > 0){
     document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v4.6.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v4.7.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
