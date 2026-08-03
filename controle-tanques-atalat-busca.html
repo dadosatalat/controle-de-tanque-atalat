@@ -973,11 +973,9 @@ async function pullFromCloudMaster(){
           return !isTankDeleted(t);
         });
 
-        if(filtered.length > 0){
-          state.tanks = dedupeTanks([].concat(state.tanks||[], filtered));
-          saveSharedTanks(state.tanks);
-          saveCache();
-        }
+        state.tanks = dedupeTanks(filtered);
+        saveSharedTanks(state.tanks);
+        saveCache();
       }
     }
   }catch(e){}
@@ -1006,10 +1004,12 @@ function getDeletedTanks(){
 function markTankDeleted(t){
   if(!t) return;
   var list = getDeletedTanks();
-  var key1 = t.id;
-  var key2 = (t.serie || "") + "_" + (t.patrimonio || "");
-  if(list.indexOf(key1) === -1) list.push(key1);
-  if(key2 !== "_" && list.indexOf(key2) === -1) list.push(key2);
+  var key1 = typeof t === "string" ? t : t.id;
+  var key2 = typeof t === "string" ? t : ((t.serie || "") + "_" + (t.patrimonio || ""));
+  var key3 = typeof t === "object" && t ? (t.serie || "") : "";
+  if(key1 && list.indexOf(key1) === -1) list.push(key1);
+  if(key2 && key2 !== "_" && list.indexOf(key2) === -1) list.push(key2);
+  if(key3 && list.indexOf(key3) === -1) list.push(key3);
   try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify(list)); }catch(e){}
   notifyOtherTabs();
 }
@@ -1017,9 +1017,16 @@ function markTankDeleted(t){
 function isTankDeleted(t){
   if(!t) return false;
   var list = getDeletedTanks();
+  if(!Array.isArray(list) || list.length === 0) return false;
   var key1 = typeof t === "string" ? t : t.id;
   var key2 = typeof t === "string" ? t : ((t.serie || "") + "_" + (t.patrimonio || ""));
-  return list.indexOf(key1) !== -1 || (key2 !== "_" && list.indexOf(key2) !== -1);
+  var key3 = typeof t === "object" && t ? (t.serie || "") : "";
+  return list.some(function(d){
+    var dStr = (d || "").toString().trim().toUpperCase();
+    return (key1 && dStr === (key1||"").toString().trim().toUpperCase()) ||
+           (key2 && key2 !== "_" && dStr === (key2||"").toString().trim().toUpperCase()) ||
+           (key3 && dStr === (key3||"").toString().trim().toUpperCase());
+  });
 }
 
 var INITIAL_SEED_TANKS = [
@@ -1684,7 +1691,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v3.2.0";
+  var CURRENT_VERSION = "v3.3.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -1975,7 +1982,7 @@ function renderTopbarUser(){
   if(pend > 0){
     document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v3.2.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v3.3.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
