@@ -1695,8 +1695,20 @@ async function loadTanques(){
 }
 
 async function loadProfiles(){
-  var res = await sb.from("profiles").select("*").order("nome");
-  state.profiles = res.data || [];
+  var direct = getDirectProfiles();
+  try{
+    var res = await sb.from("profiles").select("*").order("nome");
+    if(res.data && res.data.length > 0){
+      var map = new Map();
+      direct.forEach(function(p){ if(p && p.usuario) map.set(p.usuario.toLowerCase(), p); });
+      res.data.forEach(function(p){ if(p && (p.usuario||p.email)) map.set((p.usuario||p.email).toLowerCase(), p); });
+      state.profiles = Array.from(map.values());
+    } else {
+      state.profiles = direct;
+    }
+  }catch(e){
+    state.profiles = direct;
+  }
 }
 
 // ---------- REALTIME ----------
@@ -1772,7 +1784,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v4.3.0";
+  var CURRENT_VERSION = "v4.4.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2081,9 +2093,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v4.3.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v4.4.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v4.3.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v4.4.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3467,20 +3479,37 @@ app.salvarUsuario = async function(){
 
 app.excluirUsuario = async function(id){
   if(!hasPerm("gerenciarUsuarios")){ app.toast("Seu usuário não tem permissão para gerenciar usuários."); return; }
-  if(id === state.me.id){ app.toast("Você não pode remover o acesso da própria conta."); return; }
+  if(id === state.me.id){ app.toast("Você não pode remover a própria conta."); return; }
   var target = findProfile(id);
   if(!target) return;
+  
   var admins = state.profiles.filter(function(u){ return u.papel === "admin"; });
   if(target.papel === "admin" && admins.length <= 1){
     app.toast("É preciso manter ao menos um administrador.");
     return;
   }
-  if(!confirm("Remover o acesso de "+target.nome+"? A conta de login continua existindo, mas sem permissão nem unidade até ser reconfigurada.")) return;
-  var upd = await sb.from("profiles").update({papel: "consulta", unidade_id: null}).eq("id", id);
-  if(upd.error){ app.toast("Erro: "+upd.error.message); return; }
-  await loadProfiles();
-  app.toast("Acesso removido.");
-  app.goto("config");
+  
+  if(!confirm("Remover permanentemente o acesso e a conta de "+(target.nome || target.usuario)+"?")) return;
+
+  state.profiles = state.profiles.filter(function(u){
+    return u.id !== id && (u.usuario||"").toLowerCase() !== (target.usuario||"").toLowerCase();
+  });
+
+  try{ saveDirectProfiles(state.profiles); }catch(e){}
+  try{ localStorage.setItem("atalat_direct_profiles_v1", JSON.stringify(state.profiles)); }catch(e){}
+
+  try{
+    var passes = JSON.parse(localStorage.getItem(DIRECT_AUTH_KEY) || "{}");
+    if(target.usuario && passes[target.usuario.toLowerCase()]) {
+      delete passes[target.usuario.toLowerCase()];
+      localStorage.setItem(DIRECT_AUTH_KEY, JSON.stringify(passes));
+    }
+  }catch(e){}
+
+  try{ await sb.from("profiles").delete().eq("id", id); }catch(e){}
+
+  app.toast("✅ Usuário removido com sucesso!");
+  render();
 };
 
 // ---------- ROUTER ----------
