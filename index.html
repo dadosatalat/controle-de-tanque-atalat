@@ -2479,7 +2479,9 @@ app.salvarVisita = async function(){
   var isNovoSubmit = novaForm.tankId === "__novo__";
   var tipoEl = document.getElementById("f_tipo");
   novaForm.tipo = isNovoSubmit ? "Cadastro" : (tipoEl ? tipoEl.value : novaForm.tipo);
-  novaForm.data = document.getElementById("f_data").value || "";
+  var dataEl = document.getElementById("f_data");
+  novaForm.data = dataEl ? (dataEl.value || "") : "";
+
   var prodnomeEl = document.getElementById("f_prodnome");
   novaForm.produtorNome = prodnomeEl ? (prodnomeEl.value||"").trim() : "";
   var prodpropEl = document.getElementById("f_prodprop");
@@ -2492,18 +2494,27 @@ app.salvarVisita = async function(){
   novaForm.latitude = latEl ? latEl.value : "";
   var lngEl = document.getElementById("f_lng");
   novaForm.longitude = lngEl ? lngEl.value : "";
-  novaForm.desc = document.getElementById("f_desc").value;
+  var descEl = document.getElementById("f_desc");
+  novaForm.desc = descEl ? descEl.value : "";
+
+  var marcaEl = document.getElementById("f_marca");
+  if(marcaEl) novaForm.marca = (marcaEl.value||"").trim();
+  var anoEl = document.getElementById("f_ano_fabricacao");
+  if(anoEl) novaForm.ano_fabricacao = (anoEl.value||"").trim();
 
   var invalid = false;
   if(!novaForm.data){ markInvalid("f_data", "Informe a data."); invalid = true; }
 
   var serie, patrimonio, capacidade, unidadeId;
   if(isNovoSubmit){
-    var rawSerie = (document.getElementById("f_serie").value||"").trim();
-    var rawPatrimonio = (document.getElementById("f_patrimonio").value||"").trim();
+    var rawSerie = document.getElementById("f_serie") ? (document.getElementById("f_serie").value||"").trim() : "";
+    var rawPatrimonio = document.getElementById("f_patrimonio") ? (document.getElementById("f_patrimonio").value||"").trim() : "";
     serie = formatSerie(rawSerie);
     patrimonio = formatPatrimonio(rawPatrimonio);
-    capacidade = parseInt(document.getElementById("f_capacidade").value||"0", 10);
+    var capRaw = document.getElementById("f_capacidade") ? document.getElementById("f_capacidade").value : "0";
+    capacidade = parseInt(capRaw||"0", 10);
+    if(isNaN(capacidade)) capacidade = 0;
+
     if(!rawSerie){ markInvalid("f_serie", "Informe o número de série."); invalid = true; }
     if(!rawPatrimonio){ markInvalid("f_patrimonio", "Informe o número de patrimônio."); invalid = true; }
     if(shouldShowUnidadeSelect()){
@@ -2521,10 +2532,12 @@ app.salvarVisita = async function(){
 
   var retiradaDestino, novaUnidadeIdRetirada;
   if(novaForm.tipo === "Retirada" && novaForm.tankId !== "__novo__"){
-    retiradaDestino = document.getElementById("f_retirada_destino").value;
+    var retEl = document.getElementById("f_retirada_destino");
+    retiradaDestino = retEl ? retEl.value : "estoque";
     novaForm.retiradaDestino = retiradaDestino;
     if(retiradaDestino === "outra_unidade" && hasPerm("transferir")){
-      novaUnidadeIdRetirada = document.getElementById("f_nova_unidade").value;
+      var nunEl = document.getElementById("f_nova_unidade");
+      novaUnidadeIdRetirada = nunEl ? nunEl.value : "";
       novaForm.novaUnidadeId = novaUnidadeIdRetirada;
       if(!novaUnidadeIdRetirada){ markInvalid("f_nova_unidade", "Selecione a unidade de destino."); invalid = true; }
     }
@@ -2535,101 +2548,11 @@ app.salvarVisita = async function(){
     return;
   }
 
-  var offline = !isOnline();
-
-  if(offline){
-    if(novaForm.tankId === "__novo__"){
-      var tempId = localId("tanque");
-      var novoTank = {
-        id: tempId, serie: serie, patrimonio: patrimonio, capacidade: capacidade||0, status: "estoque",
-        produtor: novaForm.produtorNome ? {nome: novaForm.produtorNome, propriedade: novaForm.produtorProp, matricula: novaForm.produtorMatricula} : null,
-        local: {latitude: novaForm.latitude||null, longitude: novaForm.longitude||null, municipio: novaForm.municipio},
-        foto: novaForm.fotos.geral || novaForm.fotos.abrigo || null, unidade_id: unidadeId, pendente: true,
-        contrato_assinado: (novaForm.contratoAssinado === "sim"),
-        historico: [{id: localId("hist"), data: novaForm.data, tipo: novaForm.tipo, produtor: novaForm.produtorNome||"—", litros: capacidade||0, desc: novaForm.desc||"(sem observações)", fotos: Object.keys(novaForm.fotos).map(function(k){return novaForm.fotos[k];}).filter(Boolean), pendente: true}]
-      };
-      state.tanks.unshift(novoTank);
-      enqueueOp("novo_tanque_com_visita", {
-        tanqueIdLocal: tempId, serie: serie, patrimonio: patrimonio, capacidade: capacidade||0,
-        unidadeId: unidadeId, municipio: novaForm.municipio, latitude: novaForm.latitude||null, longitude: novaForm.longitude||null,
-        produtorNome: novaForm.produtorNome, produtorProp: novaForm.produtorProp,
-        data: novaForm.data, tipo: novaForm.tipo, desc: novaForm.desc, fotosBase64: novaForm.fotos
-      });
-      saveCache();
-      app.toast("Sem conexão: salvo neste aparelho. Vai sincronizar quando a internet voltar.");
-      novaForm = novoFormVazio();
-      novaTankBusca = "";
-      app.openTank(tempId);
-      return;
-    } else {
-      var tOff = findTank(novaForm.tankId);
-      if(!tOff){ app.toast("Tanque não encontrado."); return; }
-
-      var patchOff = {};
-      var isRetiradaOff = novaForm.tipo === "Retirada";
-
-      if(!isRetiradaOff && novaForm.produtorNome){
-        patchOff.produtor_nome = novaForm.produtorNome;
-        patchOff.produtor_propriedade = novaForm.produtorProp;
-        patchOff.produtor_matricula = novaForm.produtorMatricula;
-        tOff.produtor = {nome: novaForm.produtorNome, propriedade: novaForm.produtorProp, matricula: novaForm.produtorMatricula};
-        if(novaForm.tipo === "Instalação"){
-            patchOff.contrato_assinado = (novaForm.contratoAssinado === "sim");
-            tOff.contrato_assinado = patchOff.contrato_assinado;
-        }
-      }
-      if(novaForm.municipio){ patchOff.municipio = novaForm.municipio; tOff.local.municipio = novaForm.municipio; }
-      if(novaForm.latitude){ patchOff.latitude = novaForm.latitude; tOff.local.latitude = novaForm.latitude; }
-      if(novaForm.longitude){ patchOff.longitude = novaForm.longitude; tOff.local.longitude = novaForm.longitude; }
-
-      var descOff = novaForm.desc || "";
-      if(novaForm.tipo === "Manutenção"){ patchOff.status = "manutencao"; tOff.status = "manutencao"; }
-      else if(isRetiradaOff){
-        patchOff.produtor_nome = null; patchOff.produtor_propriedade = null;
-        tOff.produtor = null;
-        var destinoNomeOff = retiradaDestino === "manutencao" ? "manutenção" : (retiradaDestino === "outra_unidade" ? "outra unidade" : "estoque");
-        patchOff.status = retiradaDestino === "manutencao" ? "manutencao" : "estoque";
-        tOff.status = patchOff.status;
-        var notaRetOff = "Retirada — destino: "+destinoNomeOff+".";
-        descOff = descOff ? (notaRetOff+" "+descOff) : notaRetOff;
-      }
-      else if(tOff.status !== "em_operacao" && novaForm.tipo==="Instalação"){ patchOff.status = "em_operacao"; tOff.status = "em_operacao"; }
-
-      var fotosArrOff = Object.keys(novaForm.fotos).map(function(k){return novaForm.fotos[k];}).filter(Boolean);
-      if(novaForm.fotos.geral) tOff.foto = novaForm.fotos.geral;
-      else if(novaForm.fotos.abrigo && !tOff.foto) tOff.foto = novaForm.fotos.abrigo;
-
-      tOff.historico.unshift({id: localId("hist"), data: novaForm.data, tipo: novaForm.tipo, produtor: isRetiradaOff ? "—" : (novaForm.produtorNome||"—"), litros: capacidade||tOff.capacidade, desc: descOff||"(sem observações)", fotos: fotosArrOff, pendente: true});
-
-      enqueueOp("nova_visita_existente", {
-        tanqueId: tOff.id, unidadeId: tOff.unidade_id, patchTank: patchOff, data: novaForm.data, tipo: novaForm.tipo,
-        produtorNome: isRetiradaOff ? "" : novaForm.produtorNome, litros: capacidade||tOff.capacidade, desc: descOff, fotosBase64: novaForm.fotos
-      });
-
-      if(isRetiradaOff && retiradaDestino === "outra_unidade" && novaUnidadeIdRetirada){
-        var origemNomeOff = unidadeNome(tOff.unidade_id);
-        var destinoUnidadeNomeOff = unidadeNome(novaUnidadeIdRetirada);
-        tOff.unidade_id = novaUnidadeIdRetirada;
-        var notaTransfOff = "Transferido da unidade "+origemNomeOff+" para "+destinoUnidadeNomeOff+" (via retirada).";
-        tOff.historico.unshift({id: localId("hist"), data: novaForm.data, tipo: "Transferência de unidade", produtor: "—", litros: tOff.capacidade, desc: notaTransfOff, fotos: [], pendente: true});
-        enqueueOp("transferir_unidade", {tanqueId: tOff.id, novaUnidadeId: novaUnidadeIdRetirada, data: novaForm.data, produtor: "—", litros: tOff.capacidade, desc: notaTransfOff});
-      }
-
-      saveCache();
-      app.toast("Sem conexão: salvo neste aparelho. Vai sincronizar quando a internet voltar.");
-      novaForm = novoFormVazio();
-      novaTankBusca = "";
-      app.openTank(tOff.id);
-      return;
-    }
-  }
-
-  var isNovoSubmit = novaForm.tankId === "__novo__";
   var targetId = isNovoSubmit ? localId("tanque") : novaForm.tankId;
   var isRetirada = novaForm.tipo === "Retirada";
 
   if(isNovoSubmit){
-    var exists = state.tanks.some(function(t){
+    var exists = (state.tanks||[]).some(function(t){
       return (t.serie || "").toString().trim().toUpperCase() === serie.toUpperCase();
     });
     if(exists){
@@ -2638,13 +2561,27 @@ app.salvarVisita = async function(){
     }
 
     var novoTank = {
-      id: targetId, serie: serie, patrimonio: patrimonio, capacidade: capacidade||0, status: "estoque",
-      marca: novaForm.marca || "", ano_fabricacao: novaForm.ano_fabricacao ? parseInt(novaForm.ano_fabricacao) : null,
-      produtor: novaForm.produtorNome ? {nome: novaForm.produtorNome, propriedade: novaForm.produtorProp, matricula: novaForm.produtorMatricula} : null,
-      local: {latitude: novaForm.latitude||null, longitude: novaForm.longitude||null, municipio: novaForm.municipio},
-      foto: novaForm.fotos.geral || novaForm.fotos.abrigo || null, unidade_id: unidadeId,
+      id: targetId,
+      serie: serie,
+      patrimonio: patrimonio,
+      capacidade: capacidade||0,
+      status: "estoque",
+      marca: novaForm.marca || "",
+      ano_fabricacao: novaForm.ano_fabricacao ? (parseInt(novaForm.ano_fabricacao, 10) || null) : null,
+      produtor: novaForm.produtorNome ? {nome: novaForm.produtorNome, propriedade: novaForm.produtorProp||"", matricula: novaForm.produtorMatricula||""} : null,
+      local: {latitude: novaForm.latitude||null, longitude: novaForm.longitude||null, municipio: novaForm.municipio||"Naque - MG"},
+      foto: (novaForm.fotos && (novaForm.fotos.geral || novaForm.fotos.abrigo)) ? (novaForm.fotos.geral || novaForm.fotos.abrigo) : null,
+      unidade_id: unidadeId,
       contrato_assinado: (novaForm.contratoAssinado === "sim"),
-      historico: [{id: localId("hist"), data: novaForm.data, tipo: novaForm.tipo, produtor: novaForm.produtorNome||"—", litros: capacidade||0, desc: novaForm.desc||"(sem observações)", fotos: Object.keys(novaForm.fotos||{}).map(function(k){return novaForm.fotos[k];}).filter(Boolean)}]
+      historico: [{
+        id: localId("hist"),
+        data: novaForm.data,
+        tipo: novaForm.tipo,
+        produtor: novaForm.produtorNome || "—",
+        litros: capacidade||0,
+        desc: novaForm.desc || "(sem observações)",
+        fotos: Object.keys(novaForm.fotos||{}).map(function(k){return novaForm.fotos[k];}).filter(Boolean)
+      }]
     };
     state.tanks.unshift(novoTank);
   } else {
@@ -2674,8 +2611,8 @@ app.salvarVisita = async function(){
     else if(tExist.status !== "em_operacao" && novaForm.tipo==="Instalação"){ tExist.status = "em_operacao"; }
 
     var fotosArr = Object.keys(novaForm.fotos||{}).map(function(k){return novaForm.fotos[k];}).filter(Boolean);
-    if(novaForm.fotos.geral) tExist.foto = novaForm.fotos.geral;
-    else if(novaForm.fotos.abrigo && !tExist.foto) tExist.foto = novaForm.fotos.abrigo;
+    if(novaForm.fotos && novaForm.fotos.geral) tExist.foto = novaForm.fotos.geral;
+    else if(novaForm.fotos && novaForm.fotos.abrigo && !tExist.foto) tExist.foto = novaForm.fotos.abrigo;
 
     if(!Array.isArray(tExist.historico)) tExist.historico = [];
     tExist.historico.unshift({id: localId("hist"), data: novaForm.data, tipo: novaForm.tipo, produtor: isRetirada ? "—" : (novaForm.produtorNome||"—"), litros: capacidade||tExist.capacidade, desc: descTxt||"(sem observações)", fotos: fotosArr});
@@ -2689,6 +2626,7 @@ app.salvarVisita = async function(){
     }
   }
 
+  state.tanks = dedupeTanks(state.tanks);
   saveCache();
   saveSharedTanks(state.tanks);
   await pushToCloudMaster();
