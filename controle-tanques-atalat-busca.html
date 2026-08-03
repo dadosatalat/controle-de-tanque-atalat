@@ -1691,19 +1691,51 @@ async function loadTanques(){
 }
 
 async function loadProfiles(){
-  var direct = getDirectProfiles();
+  var directObj = getDirectProfiles();
+  var directList = Object.keys(directObj||{}).map(function(k){
+    var p = directObj[k];
+    return {
+      id: (p && p.id) || k,
+      nome: (p && p.nome) || k,
+      usuario: k,
+      papel: (p && p.papel) || "operador",
+      unidade_id: (p && p.unidade_id) || null
+    };
+  });
+
+  var DEFAULT_PROFILES = [
+    { id: "prof_italo", nome: "Italo Silva", usuario: "italo.pauloip01@gmail.com", papel: "admin", unidade_id: null },
+    { id: "prof_nelinton", nome: "Nelinton Izaias", usuario: "atalat.filialnaque@gmail.com", papel: "admin", unidade_id: "9adeb73d-b1f4-4d0c-87e5-a6138758900b" },
+    { id: "prof_admin", nome: "Admin Atalát", usuario: "admin.atalat@gmail.com", papel: "admin", unidade_id: null },
+    { id: "prof_master", nome: "Master Atalát", usuario: "master.atalat@gmail.com", papel: "admin", unidade_id: null }
+  ];
+
   try{
     var res = await sb.from("profiles").select("*").order("nome");
-    if(res.data && res.data.length > 0){
-      var map = new Map();
-      direct.forEach(function(p){ if(p && p.usuario) map.set(p.usuario.toLowerCase(), p); });
-      res.data.forEach(function(p){ if(p && (p.usuario||p.email)) map.set((p.usuario||p.email).toLowerCase(), p); });
-      state.profiles = Array.from(map.values());
-    } else {
-      state.profiles = direct;
+    var map = new Map();
+
+    DEFAULT_PROFILES.forEach(function(p){ map.set(p.usuario.toLowerCase(), p); });
+    directList.forEach(function(p){ if(p && p.usuario) map.set(p.usuario.toLowerCase(), p); });
+
+    if(res && res.data && res.data.length > 0){
+      res.data.forEach(function(p){
+        var key = (p.usuario || p.email || p.id || "").toLowerCase();
+        if(key) map.set(key, {
+          id: p.id || key,
+          nome: p.nome || p.usuario || p.email || key,
+          usuario: p.usuario || p.email || key,
+          papel: p.papel || "operador",
+          unidade_id: p.unidade_id || null
+        });
+      });
     }
+
+    state.profiles = Array.from(map.values());
   }catch(e){
-    state.profiles = direct;
+    var mapErr = new Map();
+    DEFAULT_PROFILES.forEach(function(p){ mapErr.set(p.usuario.toLowerCase(), p); });
+    directList.forEach(function(p){ if(p && p.usuario) mapErr.set(p.usuario.toLowerCase(), p); });
+    state.profiles = Array.from(mapErr.values());
   }
 }
 
@@ -1780,7 +1812,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v4.4.0";
+  var CURRENT_VERSION = "v4.5.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2074,7 +2106,7 @@ function renderTopbarUser(){
   if(pend > 0){
     document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v4.4.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v4.5.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
