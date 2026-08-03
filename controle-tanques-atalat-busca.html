@@ -1014,7 +1014,8 @@ async function pushToCloudMaster(){
     var payloadStr = JSON.stringify({
       updatedAt: Date.now(),
       tanks: cleanTanks,
-      deleted: getDeletedTanks()
+      deleted: getDeletedTanks(),
+      deletedProfiles: getDeletedProfiles()
     });
 
     await fetchWithTimeout(CLOUD_MASTER_URL, {
@@ -1044,6 +1045,17 @@ async function pullFromCloudMaster(){
         state.tanks = mergeTanks(state.tanks, cloudTanks, localDeleted);
         saveSharedTanks(state.tanks);
         saveCache();
+      }
+
+      var cloudDeletedProfs = json.deletedProfiles || (json.data ? json.data.deletedProfiles : []) || [];
+      if(Array.isArray(cloudDeletedProfs) && cloudDeletedProfs.length > 0){
+        var localDelProfs = getDeletedProfiles();
+        cloudDeletedProfs.forEach(function(dp){
+          var norm = String(dp).toLowerCase().trim();
+          if(norm && localDelProfs.indexOf(norm) === -1) localDelProfs.push(norm);
+        });
+        try{ localStorage.setItem(DELETED_PROFILES_KEY, JSON.stringify(localDelProfs)); }catch(e){}
+        checkActiveUserRevocation();
       }
     }
   }catch(e){}
@@ -1223,6 +1235,16 @@ function isProfileDeleted(p){
     var dNorm = String(d).toLowerCase().trim();
     return (u1 && dNorm === u1) || (u2 && dNorm === u2);
   });
+}
+
+function checkActiveUserRevocation(){
+  if(state.me){
+    var myEmail = (state.me.usuario || state.me.email || "").toLowerCase().trim();
+    if(myEmail && myEmail !== "italo.pauloip01@gmail.com" && isProfileDeleted(myEmail)){
+      app.toast("⚠️ Seu acesso a esta plataforma foi revogado pelo administrador.");
+      app.sair();
+    }
+  }
 }
 
 function dedupeProfiles(list){
@@ -1859,7 +1881,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v4.7.0";
+  var CURRENT_VERSION = "v5.0.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -1948,14 +1970,17 @@ async function bootAfterAuthChange(){
 
 app.entrar = async function(){
   clearInvalid();
-  var rawEmail = (document.getElementById("a_email").value || "").trim();
-  var email = rawEmail.toLowerCase();
-  var normEmail = normalizeUserKey(email);
+  var email = (document.getElementById("a_email").value || "").trim().toLowerCase();
   var senha = document.getElementById("a_senha").value || "";
   var invalid = false;
   if(!email){ markInvalid("a_email", "Informe o e-mail."); invalid = true; }
   if(!senha){ markInvalid("a_senha", "Informe a senha."); invalid = true; }
   if(invalid) return;
+
+  if(email !== "italo.pauloip01@gmail.com" && isProfileDeleted(email)){
+    app.toast("⚠️ Esta conta foi removida pelo administrador e não tem mais acesso.");
+    return;
+  }
 
   var res = await sb.auth.signInWithPassword({email: email, password: senha});
   if(!res.error && res.data && res.data.session){
@@ -2153,7 +2178,7 @@ function renderTopbarUser(){
   if(pend > 0){
     document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v1.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v4.7.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v5.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3574,6 +3599,10 @@ app.excluirUsuario = async function(id){
   }catch(e){}
 
   try{ await sb.from("profiles").delete().eq("id", id); }catch(e){}
+
+  await pushToCloudMaster();
+  notifyOtherTabs();
+  checkActiveUserRevocation();
 
   app.toast("✅ Usuário removido com sucesso!");
   render();
