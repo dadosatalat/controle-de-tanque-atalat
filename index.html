@@ -985,23 +985,24 @@ function mergeTanks(localList, cloudList, deletedList){
   var map = new Map();
   (localList || []).forEach(function(t){
     var clean = sanitizeTank(t);
-    if(clean && clean.serie){
-      var key = clean.serie.toString().trim().toUpperCase();
-      map.set(key, clean);
+    if(clean){
+      var key = (clean.serie || clean.id || "").toString().trim().toUpperCase();
+      if(key) map.set(key, clean);
     }
   });
 
   (cloudList || []).forEach(function(t){
     var clean = sanitizeTank(t);
-    if(clean && clean.serie){
-      var key = clean.serie.toString().trim().toUpperCase();
+    if(clean){
+      var key = (clean.serie || clean.id || "").toString().trim().toUpperCase();
+      if(!key) return;
       if(!map.has(key)){
-        map.set(key, clean);
+        if(!isTankDeleted(clean)) map.set(key, clean);
       } else {
         var ext = map.get(key);
         var extHist = Array.isArray(ext.historico) ? ext.historico.length : 0;
         var cloudHist = Array.isArray(clean.historico) ? clean.historico.length : 0;
-        if(cloudHist >= extHist){
+        if(cloudHist > extHist){
           map.set(key, clean);
         }
       }
@@ -1062,7 +1063,9 @@ async function pullFromCloudMaster(){
         
         var localDeleted = getDeletedTanks();
         cloudDeleted.forEach(function(d){
-          if(localDeleted.indexOf(d) === -1) localDeleted.push(d);
+          if(d && typeof d === "string" && (d.indexOf("tanque_") === 0 || d.indexOf("tank_") === 0 || d.length === 36)){
+            if(localDeleted.indexOf(d) === -1) localDeleted.push(d);
+          }
         });
         try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify(localDeleted)); }catch(e){}
 
@@ -1114,7 +1117,14 @@ function notifyOtherTabs(){
 function getDeletedTanks(){
   try{
     var raw = localStorage.getItem(DELETED_TANKS_KEY);
-    if(raw) return JSON.parse(raw);
+    if(raw){
+      var parsed = JSON.parse(raw);
+      if(Array.isArray(parsed)){
+        return parsed.filter(function(d){
+          return d && typeof d === "string" && (d.indexOf("tanque_") === 0 || d.indexOf("tank_") === 0 || d.length === 36);
+        });
+      }
+    }
   }catch(e){}
   return [];
 }
@@ -1122,13 +1132,24 @@ function getDeletedTanks(){
 function markTankDeleted(t){
   if(!t) return;
   var list = getDeletedTanks();
-  var key1 = typeof t === "string" ? t : t.id;
-  var key2 = typeof t === "string" ? t : ((t.serie || "") + "_" + (t.patrimonio || ""));
-  var key3 = typeof t === "object" && t ? (t.serie || "") : "";
-  if(key1 && list.indexOf(key1) === -1) list.push(key1);
-  if(key2 && key2 !== "_" && list.indexOf(key2) === -1) list.push(key2);
-  if(key3 && list.indexOf(key3) === -1) list.push(key3);
+  var targetId = typeof t === "string" ? t : (t.id || "");
+  targetId = (targetId || "").toString().trim();
+  if(targetId && list.indexOf(targetId) === -1) list.push(targetId);
   try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify(list)); }catch(e){}
+  notifyOtherTabs();
+}
+
+function unmarkTankDeleted(t){
+  if(!t) return;
+  var list = getDeletedTanks();
+  if(!Array.isArray(list) || list.length === 0) return;
+  var targetId = typeof t === "string" ? t : (t.id || "");
+  targetId = (targetId || "").toString().trim().toUpperCase();
+  if(!targetId) return;
+  var updated = list.filter(function(d){
+    return (d || "").toString().trim().toUpperCase() !== targetId;
+  });
+  try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify(updated)); }catch(e){}
   notifyOtherTabs();
 }
 
@@ -1136,14 +1157,12 @@ function isTankDeleted(t){
   if(!t) return false;
   var list = getDeletedTanks();
   if(!Array.isArray(list) || list.length === 0) return false;
-  var key1 = typeof t === "string" ? t : t.id;
-  var key2 = typeof t === "string" ? t : ((t.serie || "") + "_" + (t.patrimonio || ""));
-  var key3 = typeof t === "object" && t ? (t.serie || "") : "";
+  var targetId = typeof t === "string" ? t : (t.id || "");
+  targetId = (targetId || "").toString().trim().toUpperCase();
+  if(!targetId) return false;
   return list.some(function(d){
     var dStr = (d || "").toString().trim().toUpperCase();
-    return (key1 && dStr === (key1||"").toString().trim().toUpperCase()) ||
-           (key2 && key2 !== "_" && dStr === (key2||"").toString().trim().toUpperCase()) ||
-           (key3 && dStr === (key3||"").toString().trim().toUpperCase());
+    return dStr === targetId;
   });
 }
 
@@ -1934,7 +1953,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v7.0.0";
+  var CURRENT_VERSION = "v8.0.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2043,7 +2062,7 @@ app.entrar = async function(){
   var email = (document.getElementById("a_email").value || "").trim().toLowerCase();
   var senha = document.getElementById("a_senha").value || "";
   var invalid = false;
-  if(!email){ markInvalid("a_email", "Informe o e-mail."); invalid = true; }
+  if(!email){ markInvalid("a_email", "Informe o usuário."); invalid = true; }
   if(!senha){ markInvalid("a_senha", "Informe a senha."); invalid = true; }
   if(invalid) return;
 
@@ -2109,7 +2128,7 @@ app.entrar = async function(){
     }
   }catch(e){}
 
-  app.toast("⚠️ E-mail ou senha incorretos. Verifique se digitou corretamente.");
+  app.toast("⚠️ Usuário ou senha incorretos. Verifique se digitou corretamente.");
 };
 
 app.criarConta = async function(){
@@ -2119,7 +2138,7 @@ app.criarConta = async function(){
   var senha = document.getElementById("a_senha2").value || "";
   var invalid = false;
   if(!nome){ markInvalid("a_nome", "Informe seu nome."); invalid = true; }
-  if(!email){ markInvalid("a_email2", "Informe o e-mail."); invalid = true; }
+  if(!email){ markInvalid("a_email2", "Informe o usuário."); invalid = true; }
   if(!senha || senha.length < 6){ markInvalid("a_senha2", "Senha deve ter ao menos 6 caracteres."); invalid = true; }
   if(invalid) return;
 
@@ -2169,8 +2188,8 @@ function renderLogin(){
 
   var html = '<div class="auth-wrap">';
   html += '<div class="auth-title">Entrar</div>';
-  html += '<div class="auth-sub">Acesse com seu e-mail e senha</div>';
-  html += '<div class="field"><label>E-mail</label><input id="a_email" type="email" placeholder="voce@exemplo.com"/></div>';
+  html += '<div class="auth-sub">Acesse com seu usuário e senha</div>';
+  html += '<div class="field"><label>Usuário</label><input id="a_email" type="text" placeholder="Seu usuário"/></div>';
   html += '<div class="field"><label>Senha</label><div class="password-input-wrap"><input id="a_senha" type="password" placeholder="••••••••"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'a_senha\', this)">👁️</button></div></div>';
   html += '<div style="text-align:right;margin-top:-6px;margin-bottom:12px;"><button type="button" class="btn-link" style="font-size:12px;" onclick="app.trocarAuthMode(\'forgot\')">Esqueci minha senha</button></div>';
   html += '<button class="btn btn-primary" style="margin-top:4px;" onclick="app.entrar()">Entrar</button>';
@@ -2187,11 +2206,9 @@ function renderForgotPassword(){
   document.getElementById("navbar").style.display = "none";
 
   var html = '<div class="auth-wrap">';
-  html += '<div class="auth-title">Recuperar Senha</div>';
-  html += '<div class="auth-sub">Digite seu e-mail cadastrado. Enviaremos um link para você redefinir sua senha.</div>';
-  html += '<div class="field"><label>E-mail cadastrado</label><input id="a_reset_email" type="email" placeholder="voce@exemplo.com"/></div>';
-  html += '<button class="btn btn-primary" style="margin-top:14px;" onclick="app.enviarLinkRecuperacao()">Enviar link de redefinição</button>';
-  html += '<div class="auth-switch">Lembrou a senha? <button class="btn-link" onclick="app.trocarAuthMode(\'login\')">Voltar ao Entrar</button></div>';
+  html += '<div class="auth-title">Esqueceu a senha?</div>';
+  html += '<div class="auth-sub" style="line-height:1.5;">Para redefinir sua senha, entre em contato com o administrador do sistema para que ele possa redefini-la no menu Configurações.</div>';
+  html += '<button class="btn btn-primary" style="margin-top:16px;" onclick="app.trocarAuthMode(\'login\')">Voltar ao Entrar</button>';
   html += '</div>';
 
   document.getElementById("screen").innerHTML = html;
@@ -2227,7 +2244,7 @@ function renderSignup(){
   html += '<div class="auth-title">Criar conta</div>';
   html += '<div class="auth-sub">Sua conta será criada imediatamente com acesso de visualização e edição. O administrador pode gerenciar permissões e unidades em Configurações.</div>';
   html += '<div class="field"><label>Nome completo</label><input id="a_nome" placeholder="Seu nome"/></div>';
-  html += '<div class="field"><label>E-mail</label><input id="a_email2" type="email" placeholder="voce@exemplo.com"/></div>';
+  html += '<div class="field"><label>Usuário</label><input id="a_email2" type="text" placeholder="Seu usuário"/></div>';
   html += '<div class="field"><label>Senha</label><div class="password-input-wrap"><input id="a_senha2" type="password" placeholder="mínimo 6 caracteres"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'a_senha2\', this)">👁️</button></div></div>';
   html += '<button class="btn btn-primary" style="margin-top:14px;" onclick="app.criarConta()">Criar conta</button>';
   html += '<div class="auth-switch">Já tem conta? <button class="btn-link" onclick="app.trocarAuthMode(\'login\')">Entrar</button></div>';
@@ -2252,9 +2269,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v7.0.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.0.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v7.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -2883,12 +2900,19 @@ app.salvarVisita = async function(){
     }
   }
 
+  unmarkTankDeleted(targetId);
+  if(serie) unmarkTankDeleted(serie);
+  if(patrimonio) unmarkTankDeleted(patrimonio);
+
   state.tanks = dedupeTanks(state.tanks);
+  state.unidadeFilter = "";
+  state.statusFilter = "";
+  state.filter = "";
   saveCache();
   saveSharedTanks(state.tanks);
   await pushToCloudMaster();
   notifyOtherTabs();
-  app.toast("✅ Registro salvo e sincronizado em tempo real!");
+  app.toast("✅ Registro salvo e sincronizado!");
   novaForm = novoFormVazio();
   novaTankBusca = "";
   app.openTank(targetId);
@@ -3389,7 +3413,7 @@ function renderConfig(){
   html += '<div class="current-user-card">'+
     '<div class="l">Sua conta</div>'+
     '<div class="v">'+esc(me.nome)+' · <span class="badge '+ROLE_CLASS[me.papel]+'">'+ROLE_LABEL[me.papel]+'</span></div>'+
-    '<div class="note">'+esc(me.email)+(me.unidade_id ? ' · Unidade: '+esc(unidadeNome(me.unidade_id)) : '')+'</div>'+
+    '<div class="note">'+esc(me.usuario || me.nome || '')+(me.unidade_id ? ' · Unidade: '+esc(unidadeNome(me.unidade_id)) : '')+'</div>'+
     '<button class="btn btn-danger" style="margin-top:12px;" onclick="app.sair()">Sair da conta</button>'+
   '</div>';
 
@@ -3415,6 +3439,14 @@ function renderConfig(){
     '</div>'+
   '</div>';
 
+  html += '<div class="section-title">Versão do Aplicativo</div>';
+  html += '<div class="current-user-card" style="margin-bottom:18px;">'+
+    '<div class="l">Versão Instalada</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v8.0.0</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Correção de Sincronização + Cadastro de Tanques sem Sumir).</div>'+
+    '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
+  '</div>';
+
   html += '<div class="section-title">Sincronização de dados</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Status da Sincronização</div>'+
@@ -3426,13 +3458,13 @@ function renderConfig(){
   if(hasPerm("gerenciarUsuarios")){
     html += '<div class="section-title">Gerenciar / Redefinir Senha de Usuário</div>';
     var uOptions = state.profiles.map(function(p){
-      return '<option value="'+p.id+'">'+esc(p.nome)+' ('+esc(p.usuario||p.email||'')+')</option>';
+      return '<option value="'+p.id+'">'+esc(p.nome)+' ('+esc(p.usuario||'')+')</option>';
     }).join('');
     html += '<div class="current-user-card" style="margin-bottom:18px;">'+
       '<div class="l">Redefinição Rápida de Senha</div>'+
       '<div class="field" style="margin-top:8px;"><label>Selecione o usuário</label><select id="adm_user_select">'+uOptions+'</select></div>'+
       '<div class="field"><label>Nova senha</label><div class="password-input-wrap"><input id="adm_nova_senha" type="password" placeholder="Digite a nova senha para o usuário"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'adm_nova_senha\', this)">👁️</button></div></div>'+
-      '<button class="btn btn-primary" style="margin-top:12px;" onclick="app.definirSenhaUsuario()">✉️ Enviar Redefinição de Senha para Usuário</button>'+
+      '<button class="btn btn-primary" style="margin-top:12px;" onclick="app.definirSenhaUsuario()">🔑 Redefinir Senha do Usuário</button>'+
     '</div>';
   }
 
@@ -3481,7 +3513,7 @@ app.definirSenhaUsuario = async function(){
   setDirectPassword(email, novaSenha);
   try{ await sb.auth.resetPasswordForEmail(email); }catch(e){}
 
-  app.toast("✅ Senha de "+(u.nome||email)+" alterada com sucesso para '"+novaSenha+"'! Ele já pode entrar direto sem confirmar e-mail.");
+  app.toast("✅ Senha de "+(u.nome||u.usuario)+" alterada com sucesso para '"+novaSenha+"'! Ele já pode entrar direto com a nova senha.");
   document.getElementById("adm_nova_senha").value = "";
 };
 
@@ -3535,7 +3567,6 @@ function renderUsuarioForm(){
   html += '<div class="section-title" style="margin-top:16px;">Segurança / Senha</div>';
   html += '<div class="field"><label>Nova senha</label><div class="password-input-wrap"><input id="u_novasenha" type="password" placeholder="Digite para redefinir a senha (mínimo 6 caracteres)"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'u_novasenha\', this)">👁️</button></div></div>';
   html += '<div class="field"><label>Confirmar nova senha</label><div class="password-input-wrap"><input id="u_confnovasenha" type="password" placeholder="Confirme a nova senha"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'u_confnovasenha\', this)">👁️</button></div></div>';
-  html += '<button type="button" class="btn btn-ghost no-print" style="margin-top:4px;font-size:12px;padding:8px;" onclick="app.enviarRedefinicaoSenha(\''+userForm.id+'\')">Enviar e-mail de redefinição de senha</button>';
 
   html += '<div class="row-btns" style="margin-top:18px;">'+
     '<button class="btn" onclick="app.goto(\'config\')">Cancelar</button>'+
