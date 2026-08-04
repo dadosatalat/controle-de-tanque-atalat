@@ -1261,10 +1261,13 @@ function checkActiveUserRevocation(){
 function canonicalUserKey(p){
   if(!p) return "";
   var raw = (typeof p === "string" ? p : (p.usuario || p.email || p.id || p.nome || "")).toString().toLowerCase().trim();
-  if(raw.indexOf("italo") !== -1 || raw.indexOf("pauloip") !== -1) return "italo.pauloip01@gmail.com";
-  if(raw.indexOf("nelinton") !== -1 || raw.indexOf("filialnaque") !== -1) return "atalat.filialnaque@gmail.com";
-  if(raw.indexOf("admin.atalat") !== -1 || raw.indexOf("prof_admin") !== -1) return "admin.atalat@gmail.com";
-  if(raw.indexOf("master.atalat") !== -1 || raw.indexOf("prof_master") !== -1) return "master.atalat@gmail.com";
+  var nameStr = (typeof p === "object" && p && p.nome ? p.nome : "").toString().toLowerCase().trim();
+  var allStr = raw + " " + nameStr;
+
+  if(allStr.indexOf("italo") !== -1 || allStr.indexOf("pauloip") !== -1) return "italo.pauloip01@gmail.com";
+  if(allStr.indexOf("nelint") !== -1 || allStr.indexOf("filialnaque") !== -1 || raw === "6ae69e9c-6238-44e5-9b1a-a477fe33fd46") return "atalat.filialnaque@gmail.com";
+  if(allStr.indexOf("admin.atalat") !== -1 || allStr.indexOf("prof_admin") !== -1) return "admin.atalat@gmail.com";
+  if(allStr.indexOf("master.atalat") !== -1 || allStr.indexOf("prof_master") !== -1) return "master.atalat@gmail.com";
   return raw.replace(/[^a-z0-9@._-]/g, "");
 }
 
@@ -1274,14 +1277,19 @@ function dedupeProfiles(list){
     if(!p || isProfileDeleted(p)) return;
     var cKey = canonicalUserKey(p);
     if(!cKey || /^\d+$/.test(cKey)) return;
-    
+
     if(!map.has(cKey)){
       map.set(cKey, p);
     } else {
       var ext = map.get(cKey);
-      if((p.usuario && p.usuario.indexOf("@") !== -1) && (!ext.usuario || ext.usuario.indexOf("@") === -1)){
-        map.set(cKey, p);
-      }
+      var merged = Object.assign({}, ext, p);
+      if(ext.papel === "admin" || p.papel === "admin") merged.papel = "admin";
+      if(ext.id && ext.id.length === 36) merged.id = ext.id;
+      if(p.id && p.id.length === 36) merged.id = p.id;
+      if(p.usuario && p.usuario.indexOf("@") !== -1) merged.usuario = p.usuario;
+      if(p.email && p.email.indexOf("@") !== -1) merged.email = p.email;
+      if(p.nome && p.nome.length > (ext.nome || "").length) merged.nome = p.nome;
+      map.set(cKey, merged);
     }
   });
   return Array.from(map.values());
@@ -1818,9 +1826,7 @@ async function loadProfiles(){
 
   var DEFAULT_PROFILES = [
     { id: "prof_italo", nome: "Italo Silva", usuario: "italo.pauloip01@gmail.com", papel: "admin", unidade_id: null },
-    { id: "prof_nelinton", nome: "Nelinton Izaias", usuario: "atalat.filialnaque@gmail.com", papel: "admin", unidade_id: "9adeb73d-b1f4-4d0c-87e5-a6138758900b" },
-    { id: "prof_admin", nome: "Admin Atalát", usuario: "admin.atalat@gmail.com", papel: "admin", unidade_id: null },
-    { id: "prof_master", nome: "Master Atalát", usuario: "master.atalat@gmail.com", papel: "admin", unidade_id: null }
+    { id: "prof_nelinton", nome: "Nelinton Izaias", usuario: "atalat.filialnaque@gmail.com", papel: "admin", unidade_id: "9adeb73d-b1f4-4d0c-87e5-a6138758900b" }
   ];
 
   var combined = [];
@@ -1936,7 +1942,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v8.3.0";
+  var CURRENT_VERSION = "v8.4.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2252,9 +2258,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.3.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.4.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.3.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.4.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3440,8 +3446,8 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v8.3.0</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Digitação sem Interrupções + Foco Preservado).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v8.4.0</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Unificação e Desduplicação de Usuários).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
 
