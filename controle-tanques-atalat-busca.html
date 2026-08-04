@@ -1048,6 +1048,34 @@ async function pushToCloudMaster(){
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: payloadStr
     }, 4000);
+
+    try{
+      if(cleanTanks && cleanTanks.length > 0){
+        var sbTanks = cleanTanks.map(function(t){
+          var tankId = (t.id && t.id.length === 36) ? t.id : null;
+          var item = {
+            serie: t.serie || "",
+            patrimonio: t.patrimonio || "",
+            capacidade: parseInt(t.capacidade, 10) || 0,
+            status: t.status || "estoque",
+            produtor_nome: t.produtor ? (t.produtor.nome || null) : null,
+            produtor_propriedade: t.produtor ? (t.produtor.propriedade || null) : null,
+            produtor_matricula: t.produtor ? (t.produtor.matricula || null) : null,
+            unidade_id: (t.unidade_id && t.unidade_id.length === 36) ? t.unidade_id : null,
+            local_municipio: t.local ? (t.local.municipio || null) : null,
+            local_latitude: t.local ? (String(t.local.latitude || "") || null) : null,
+            local_longitude: t.local ? (String(t.local.longitude || "") || null) : null,
+            foto: t.foto || null,
+            contrato_assinado: !!t.contrato_assinado,
+            marca: t.marca || null,
+            ano_fabricacao: t.ano_fabricacao ? (parseInt(t.ano_fabricacao, 10) || null) : null
+          };
+          if(tankId) item.id = tankId;
+          return item;
+        });
+        await sb.from("tanques").upsert(sbTanks);
+      }
+    }catch(e){}
   }catch(e){}
 }
 
@@ -1952,7 +1980,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v8.5.0";
+  var CURRENT_VERSION = "v8.6.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2251,9 +2279,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.6.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.5.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.6.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3438,8 +3466,8 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v8.5.0</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Atribuição Automática de Administrador para Filial Naque).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v8.6.0</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Sincronização Direta de Tanques e Perfis com Supabase).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
 
@@ -3643,13 +3671,31 @@ app.salvarUsuario = async function(){
   await pushToCloudMaster();
 
   try{
-    await sb.from("profiles").upsert({
-      id: userForm.id,
-      nome: nome,
-      papel: papel,
-      unidade_id: unidadeId,
-      usuario: (targetUser ? (targetUser.usuario || targetUser.email) : null)
-    });
+    var targetEmail = (targetUser ? (targetUser.usuario || targetUser.email) : "") || userForm.nome;
+
+    if(userForm.id && userForm.id.length === 36){
+      await sb.from("profiles").upsert({
+        id: userForm.id,
+        nome: nome,
+        papel: papel,
+        unidade_id: (unidadeId && unidadeId.length === 36) ? unidadeId : null,
+        usuario: targetEmail
+      });
+    }
+
+    if(targetEmail){
+      await sb.from("profiles").update({
+        nome: nome,
+        papel: papel,
+        unidade_id: (unidadeId && unidadeId.length === 36) ? unidadeId : null
+      }).eq("usuario", targetEmail);
+
+      await sb.from("profiles").update({
+        nome: nome,
+        papel: papel,
+        unidade_id: (unidadeId && unidadeId.length === 36) ? unidadeId : null
+      }).eq("email", targetEmail);
+    }
   }catch(e){}
 
   await loadProfiles();
