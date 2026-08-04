@@ -1015,7 +1015,12 @@ function mergeTanks(localList, cloudList, deletedList){
         var ext = map.get(key);
         if(!isTankDeleted(clean)){
           var mergedHist = mergeHistories(ext.historico, clean.historico);
-          var mergedTank = Object.assign({}, clean, ext);
+          var mergedTank;
+          if(ext.pendente){
+            mergedTank = Object.assign({}, clean, ext);
+          } else {
+            mergedTank = Object.assign({}, ext, clean);
+          }
           mergedTank.historico = mergedHist;
           map.set(key, mergedTank);
         }
@@ -3145,12 +3150,13 @@ app.salvarEdicaoTanque = async function(){
   if(!rawSerie){ markInvalid("e_serie", "Informe o número de série."); invalid = true; }
   if(!rawPatrimonio){ markInvalid("e_patrimonio", "Informe o número de patrimônio."); invalid = true; }
   if(!municipio){ markInvalid("e_municipio", "Informe o município."); invalid = true; }
-  if(invalid) return;
+  var unidadeId = document.getElementById("e_unidade") ? document.getElementById("e_unidade").value : t.unidade_id;
 
   t.serie = serie;
   t.patrimonio = patrimonio;
   t.capacidade = capacidade || 0;
   t.status = status;
+  t.unidade_id = unidadeId;
   t.marca = marca;
   t.ano_fabricacao = anoFab;
   t.produtor = prodNome ? { nome: prodNome, propriedade: prodProp, matricula: prodMatricula } : null;
@@ -3169,8 +3175,29 @@ app.salvarEdicaoTanque = async function(){
     }
   }
 
-    app.openTank(t.id);
+  saveCache();
+  saveSharedTanks(state.tanks);
+
+  try{
+    var sbPayload = {
+      id: tankToUUID(t),
+      serie: serie,
+      patrimonio: patrimonio,
+      capacidade: capacidade || 0,
+      status: status,
+      produtor_nome: prodNome || null,
+      produtor_propriedade: prodProp || null,
+      unidade_id: (unidadeId && unidadeId.length === 36) ? unidadeId : null
+    };
+    await sb.from("tanques").upsert([sbPayload], { onConflict: "id" });
+  }catch(e){
+    console.warn("Supabase update warning:", e);
   }
+
+  await pushToCloudMaster();
+  notifyOtherTabs();
+  app.toast("✅ Tanque atualizado e sincronizado!");
+  app.openTank(t.id);
 };
 
 app.excluirTanque = async function(id){
