@@ -1052,28 +1052,18 @@ async function pushToCloudMaster(){
     try{
       if(cleanTanks && cleanTanks.length > 0){
         var sbTanks = cleanTanks.map(function(t){
-          var tankId = (t.id && t.id.length === 36) ? t.id : null;
-          var item = {
-            serie: t.serie || "",
-            patrimonio: t.patrimonio || "",
+          return {
+            id: toUUID(t.id),
+            serie: String(t.serie || "").trim(),
+            patrimonio: String(t.patrimonio || "").trim(),
             capacidade: parseInt(t.capacidade, 10) || 0,
-            status: t.status || "estoque",
+            status: String(t.status || "estoque").trim(),
             produtor_nome: t.produtor ? (t.produtor.nome || null) : null,
             produtor_propriedade: t.produtor ? (t.produtor.propriedade || null) : null,
-            produtor_matricula: t.produtor ? (t.produtor.matricula || null) : null,
-            unidade_id: (t.unidade_id && t.unidade_id.length === 36) ? t.unidade_id : null,
-            local_municipio: t.local ? (t.local.municipio || null) : null,
-            local_latitude: t.local ? (String(t.local.latitude || "") || null) : null,
-            local_longitude: t.local ? (String(t.local.longitude || "") || null) : null,
-            foto: t.foto || null,
-            contrato_assinado: !!t.contrato_assinado,
-            marca: t.marca || null,
-            ano_fabricacao: t.ano_fabricacao ? (parseInt(t.ano_fabricacao, 10) || null) : null
+            unidade_id: (t.unidade_id && t.unidade_id.length === 36) ? t.unidade_id : null
           };
-          if(tankId) item.id = tankId;
-          return item;
         });
-        await sb.from("tanques").upsert(sbTanks);
+        await sb.from("tanques").upsert(sbTanks, { onConflict: "id" });
       }
     }catch(e){}
   }catch(e){}
@@ -1321,6 +1311,19 @@ function dedupeProfiles(list){
     }
   });
   return Array.from(map.values());
+}
+
+function toUUID(str){
+  if(!str) return "00000000-0000-4000-8000-000000000000";
+  var s = String(str).toLowerCase().replace(/[^a-z0-9]/g, "");
+  if(s.length === 36 && str.indexOf("-") !== -1) return str;
+  var hex = "";
+  for(var i = 0; i < s.length; i++){
+    hex += s.charCodeAt(i).toString(16);
+  }
+  while(hex.length < 32) hex += "0";
+  hex = hex.slice(0, 32);
+  return hex.slice(0,8)+"-"+hex.slice(8,12)+"-4"+hex.slice(13,16)+"-a"+hex.slice(17,20)+"-"+hex.slice(20,32);
 }
 
 function getDirectProfiles(){
@@ -1979,7 +1982,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v8.7.0";
+  var CURRENT_VERSION = "v8.8.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2279,9 +2282,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.7.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.8.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.7.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.8.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3466,8 +3469,8 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v8.7.0</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Forçamento de Perfil Administrador sem Cache Antigo).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v8.8.0</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Mapeamento Estrito de Colunas e UUIDs no Supabase).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
 
