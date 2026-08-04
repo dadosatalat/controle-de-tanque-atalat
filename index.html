@@ -1042,6 +1042,20 @@ async function pushToCloudMaster(){
       return copy;
     });
 
+    var localDeleted = getDeletedTanks();
+    var activeKeys = new Set();
+    (state.tanks || []).forEach(function(t){
+      if(t.id) activeKeys.add(String(t.id).toUpperCase().trim());
+      if(t.serie) activeKeys.add(String(t.serie).toUpperCase().trim());
+      if(t.patrimonio) activeKeys.add(String(t.patrimonio).toUpperCase().trim());
+      var tu = tankToUUID(t).toUpperCase().trim();
+      if(tu) activeKeys.add(tu);
+    });
+    var cleanDeleted = localDeleted.filter(function(d){
+      return !activeKeys.has(String(d).toUpperCase().trim());
+    });
+    try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify(cleanDeleted)); }catch(e){}
+
     var cleanProfiles = dedupeProfiles(state.profiles||[]).map(function(p){
       return {
         id: p.id || p.usuario || p.email,
@@ -1056,7 +1070,7 @@ async function pushToCloudMaster(){
     var payloadStr = JSON.stringify({
       updatedAt: Date.now(),
       tanks: cleanTanks,
-      deleted: getDeletedTanks(),
+      deleted: cleanDeleted,
       deletedProfiles: getDeletedProfiles(),
       profiles: cleanProfiles
     });
@@ -1226,11 +1240,20 @@ function unmarkTankDeleted(t){
   if(!t) return;
   var list = getDeletedTanks();
   if(!Array.isArray(list) || list.length === 0) return;
-  var targetId = typeof t === "string" ? t : (t.id || "");
-  targetId = (targetId || "").toString().trim().toUpperCase();
-  if(!targetId) return;
+  var idsToRemove = new Set();
+  if(typeof t === "string"){
+    idsToRemove.add(t.trim().toUpperCase());
+    idsToRemove.add(toUUID(t).trim().toUpperCase());
+    idsToRemove.add(tankToUUID(t).trim().toUpperCase());
+  } else if(typeof t === "object" && t){
+    if(t.id) idsToRemove.add(String(t.id).trim().toUpperCase());
+    if(t.serie) idsToRemove.add(String(t.serie).trim().toUpperCase());
+    if(t.patrimonio) idsToRemove.add(String(t.patrimonio).trim().toUpperCase());
+    var tu = tankToUUID(t).trim().toUpperCase();
+    if(tu) idsToRemove.add(tu);
+  }
   var updated = list.filter(function(d){
-    return (d || "").toString().trim().toUpperCase() !== targetId;
+    return !idsToRemove.has((d || "").toString().trim().toUpperCase());
   });
   try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify(updated)); }catch(e){}
   notifyOtherTabs();
@@ -2050,7 +2073,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v9.3.0";
+  var CURRENT_VERSION = "v9.4.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2367,9 +2390,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.3.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.4.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.3.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.4.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3203,22 +3226,32 @@ app.excluirTanque = async function(id){
   if(!confirm("Excluir o tanque Série "+t.serie+"? Todo o histórico será perdido. Essa ação não pode ser desfeita.")) return;
 
   markTankDeleted(t.id);
+  markTankDeleted(tankToUUID(t));
   if(t.serie) markTankDeleted(t.serie);
   if(t.patrimonio) markTankDeleted(t.patrimonio);
-  state.tanks = state.tanks.filter(function(x){ return x.id !== id && (t.serie ? x.serie !== t.serie : true); });
+
+  var targetUuid = tankToUUID(t);
+  var targetSerieNorm = (t.serie || "").toString().trim().toUpperCase();
+
+  state.tanks = (state.tanks || []).filter(function(x){
+    var xUuid = tankToUUID(x);
+    var xSerieNorm = (x.serie || "").toString().trim().toUpperCase();
+    var isMatch = (x.id === id) || (x.id === t.id) || (xUuid === targetUuid) || (targetSerieNorm && xSerieNorm === targetSerieNorm);
+    return !isMatch;
+  });
 
   saveCache();
   saveSharedTanks(state.tanks);
 
   try{
-    var uuid = toUUID(t.id);
-    await sb.from("tanques").delete().eq("id", uuid);
+    await sb.from("tanques").delete().eq("id", targetUuid);
+    if(t.id && t.id !== targetUuid) await sb.from("tanques").delete().eq("id", t.id);
     if(t.serie) await sb.from("tanques").delete().eq("serie", t.serie);
   }catch(e){}
 
   await pushToCloudMaster();
   notifyOtherTabs();
-  app.toast("Tanque excluído com sucesso.");
+  app.toast("Tanque "+t.serie+" excluído com sucesso.");
   app.goto("painel");
 };
 
@@ -3563,8 +3596,8 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v9.3.0</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Preservação Incondicional de Novos Cadastros de Tanques).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v9.4.0</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Exclusão Estritamente Individual e Limpeza de Marcadores).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
 
