@@ -1787,35 +1787,34 @@ async function loadMe(){
   if(!state.session || !state.session.user) return;
   var uid = state.session.user.id;
   var email = (state.session.user.email || "").toLowerCase().trim();
-  var normEmail = normalizeUserKey(email);
-
-  var directProfs = getDirectProfiles();
-  var savedDirect = directProfs[uid] || directProfs[email] || directProfs[normEmail] || {};
-
-  if(!savedDirect.papel && (email.indexOf("nelint") !== -1 || email.indexOf("filialnaque") !== -1 || email.indexOf("italo") !== -1)){
-    savedDirect.papel = "admin";
-  }
 
   var res = await sb.from("profiles").select("*").eq("id", uid).maybeSingle();
+  if(!res || !res.data){
+    res = await sb.from("profiles").select("*").eq("usuario", email).maybeSingle();
+  }
+
   var meta = state.session.user.user_metadata || {};
   var defaultName = meta.nome || email.split("@")[0];
 
-  if(res.data){
-    state.me = res.data;
-  } else {
-    state.me = {
-      id: uid,
-      nome: defaultName,
-      usuario: email,
-      papel: savedDirect.papel || "admin",
-      unidade_id: savedDirect.unidade_id || "9adeb73d-b1f4-4d0c-87e5-a6138758900b"
-    };
+  var profInList = (state.profiles || []).find(function(p){
+    return (p.id && p.id === uid) || (p.usuario && p.usuario.toLowerCase().trim() === email);
+  });
+
+  state.me = {
+    id: uid,
+    nome: (res && res.data && res.data.nome) || (profInList && profInList.nome) || defaultName,
+    usuario: email,
+    papel: (res && res.data && res.data.papel) || (profInList && profInList.papel) || "admin",
+    unidade_id: (res && res.data && res.data.unidade_id) || (profInList && profInList.unidade_id) || "9adeb73d-b1f4-4d0c-87e5-a6138758900b"
+  };
+
+  if(email.indexOf("nelint") !== -1 || email.indexOf("filialnaque") !== -1 || email.indexOf("italo") !== -1 || email.indexOf("pauloip") !== -1){
+    state.me.papel = "admin";
   }
 
-  if(savedDirect.papel) state.me.papel = savedDirect.papel;
-  if(savedDirect.unidade_id !== undefined) state.me.unidade_id = savedDirect.unidade_id;
-  if(savedDirect.nome) state.me.nome = savedDirect.nome;
-  if(!state.me.papel) state.me.papel = "admin";
+  if(profInList && profInList.papel === "admin"){
+    state.me.papel = "admin";
+  }
 
   saveCache();
 }
@@ -1980,14 +1979,15 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v8.6.0";
+  var CURRENT_VERSION = "v8.7.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
-    localStorage.removeItem(CACHE_KEY);
-    localStorage.removeItem(QUEUE_KEY);
-    localStorage.removeItem(SHARED_TANKS_KEY);
-    localStorage.removeItem(DELETED_TANKS_KEY);
+    try{
+      localStorage.removeItem(CACHE_KEY);
+      localStorage.removeItem(DIRECT_PROFILES_KEY);
+      localStorage.removeItem(SHARED_TANKS_KEY);
+    }catch(e){}
     if('serviceWorker' in navigator){
       navigator.serviceWorker.getRegistrations().then(function(regs){
         var promises = [];
@@ -2279,9 +2279,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.6.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.7.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.6.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.7.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3466,8 +3466,8 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v8.6.0</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Sincronização Direta de Tanques e Perfis com Supabase).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v8.7.0</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Forçamento de Perfil Administrador sem Cache Antigo).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
 
