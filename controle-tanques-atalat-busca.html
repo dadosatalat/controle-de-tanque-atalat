@@ -1166,63 +1166,17 @@ function isTankDeleted(t){
   });
 }
 
-var INITIAL_SEED_TANKS = [
-  {
-    id: "tank_seed_1",
-    serie: "TQ-5555",
-    patrimonio: "PAT-5555",
-    capacidade: 40000,
-    marca: "Westfalia",
-    ano_fabricacao: 2022,
-    status: "estoque",
-    unidade_id: "9adeb73d-b1f4-4d0c-87e5-a6138758900b",
-    local: { municipio: "Naque - MG", latitude: "", longitude: "" },
-    produtor: null,
-    foto: null,
-    contrato_assinado: false,
-    historico: [{ id: "h1", data: todayISO(), tipo: "Troca", produtor: "—", litros: 40000, fotos: [], desc_texto: "Tanque em estoque na unidade Naque." }]
-  },
-  {
-    id: "tank_seed_4",
-    serie: "TQ-1001",
-    patrimonio: "PAT-2201",
-    capacidade: 5000,
-    marca: "Eletrofrio",
-    ano_fabricacao: 2021,
-    status: "em_operacao",
-    unidade_id: "ab440a55-abed-4482-8f09-1c6fe7421069",
-    local: { municipio: "Governador Valadares - MG", latitude: "", longitude: "" },
-    produtor: { nome: "José Ribeiro da Silva", propriedade: "Fazenda Santa Luzia", matricula: "" },
-    foto: null,
-    contrato_assinado: true,
-    historico: [{ id: "h4", data: todayISO(), tipo: "Troca", produtor: "José Ribeiro da Silva", litros: 5000, fotos: [], desc_texto: "Tanque instalado na Fazenda Santa Luzia." }]
-  },
-  {
-    id: "tank_seed_5",
-    serie: "TQ-3001",
-    patrimonio: "PAT-4401",
-    capacidade: 5000,
-    marca: "Plaszom",
-    ano_fabricacao: 2024,
-    status: "em_operacao",
-    unidade_id: "ab440a55-abed-4482-8f09-1c6fe7421069",
-    local: { municipio: "Naque - MG", latitude: "", longitude: "" },
-    produtor: { nome: "Sebastião Almeida Reis", propriedade: "Fazenda Bela Vista", matricula: "" },
-    foto: null,
-    contrato_assinado: true,
-    historico: [{ id: "h5", data: todayISO(), tipo: "Troca", produtor: "Sebastião Almeida Reis", litros: 5000, fotos: [], desc_texto: "Tanque instalado na Fazenda Bela Vista." }]
-  }
-];
+var INITIAL_SEED_TANKS = [];
 
 function getSharedTanks(){
   try{
     var raw = localStorage.getItem(SHARED_TANKS_KEY);
     if(raw){
       var parsed = JSON.parse(raw);
-      if(parsed && parsed.length > 0) return parsed;
+      if(Array.isArray(parsed)) return parsed;
     }
   }catch(e){}
-  return INITIAL_SEED_TANKS;
+  return [];
 }
 
 function saveSharedTanks(tanks){
@@ -1924,6 +1878,21 @@ app.forcarRecarregarDados = async function(){
   }
 };
 
+app.resetarBaseDeTanques = async function(){
+  if(!hasPerm("admin")){ app.toast("Apenas administradores podem resetar a base de dados."); return; }
+  if(!confirm("⚠️ ATENÇÃO: Deseja apagar TODOS os tanques cadastrados e zerar a base de dados da nuvem? Esta ação não pode ser desfeita!")) return;
+
+  app.toast("Limpando base de dados...");
+  state.tanks = [];
+  try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify([])); }catch(e){}
+  saveCache();
+  saveSharedTanks([]);
+  await pushToCloudMaster();
+  notifyOtherTabs();
+  app.toast("✅ Base de dados de tanques resetada com sucesso!");
+  render();
+};
+
 app.forcarAtualizacaoApp = function(){
   app.toast("Limpando memória de cache do aplicativo...");
   if ('serviceWorker' in navigator) {
@@ -1952,7 +1921,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v8.1.0";
+  var CURRENT_VERSION = "v8.2.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2251,9 +2220,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.1.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.2.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.1.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.2.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3418,14 +3387,15 @@ function renderConfig(){
     '<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">'+
       '<button class="btn btn-primary" onclick="app.forcarRecarregarDados()">🔄 Recarregar Dados do Servidor</button>'+
       '<button class="btn btn-ghost" style="background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🧹 Limpar Cache &amp; Reinstalar App</button>'+
+      (hasPerm("admin") ? '<button class="btn btn-danger" onclick="app.resetarBaseDeTanques()">🗑️ Resetar Base de Tanques (Zerar Tudo)</button>' : '')+
     '</div>'+
   '</div>';
 
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v8.1.0</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Sincronização Bidirecional Instantânea de Exclusões).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v8.2.0</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Base de Dados Limpa + Reset de Tanques).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
 
