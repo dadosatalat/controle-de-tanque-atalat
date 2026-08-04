@@ -1928,11 +1928,20 @@ var DEFAULT_UNIDADES = [
   { id: "33333333-3333-3333-3333-333333333333", nome: "Fidelândia" }
 ];
 
+function sanitizeUnidades(arr){
+  if(!Array.isArray(arr) || arr.length === 0) return DEFAULT_UNIDADES;
+  return arr.map(function(u){
+    var name = u.nome || "";
+    if(name === "Filial" || (u.id && u.id.indexOf("33333333") !== -1)) name = "Fidelândia";
+    return { id: u.id, nome: name };
+  });
+}
+
 async function loadUnidades(){
   try{
     var res = await sb.from("unidades").select("*").order("nome");
     if(res.data && res.data.length > 0){
-      state.unidades = res.data;
+      state.unidades = sanitizeUnidades(res.data);
       return;
     }
   }catch(e){}
@@ -2082,7 +2091,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v9.5.0";
+  var CURRENT_VERSION = "v9.7.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2091,6 +2100,8 @@ function autoCheckAppUpdate(){
       localStorage.removeItem(DIRECT_PROFILES_KEY);
       localStorage.removeItem(SHARED_TANKS_KEY);
     }catch(e){}
+    state.unidades = sanitizeUnidades(DEFAULT_UNIDADES);
+    saveCache();
     if('serviceWorker' in navigator){
       navigator.serviceWorker.getRegistrations().then(function(regs){
         var promises = [];
@@ -2141,7 +2152,7 @@ async function bootAfterAuthChange(){
   var cache = loadCacheFromDisk();
   var temCache = false;
   if(cache && cache.tanks && cache.tanks.length){
-    state.unidades = cache.unidades || [];
+    state.unidades = sanitizeUnidades(cache.unidades);
     state.tanks = cache.tanks || [];
     temCache = true;
   }
@@ -2382,9 +2393,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.7.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.5.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.7.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -2562,7 +2573,7 @@ function renderDetalhe(){
   html += '<div class="info-box" style="margin-bottom:12px;"><div class="l">Unidade</div><div class="v">'+esc(unidadeNome(t.unidade_id))+'</div></div>';
 
   var rowBtns = "";
-  if(hasPerm("editar")) rowBtns += '<button class="btn btn-primary" style="flex:2;font-weight:700;font-size:14px;padding:12px;background:#0284c7;color:#ffffff;border:none;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;gap:6px;" onclick="app.editarTanque(\''+t.id+'\')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>Editar tanque</button>';
+  if(hasPerm("editar")) rowBtns += '<button class="btn btn-primary" style="flex:2;font-weight:700;font-size:14px;padding:12px;background:#0284c7;color:#ffffff;border:none;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;gap:6px;" onclick="app.editarTanque(\''+t.id+'\')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>Editar tanque</button>';
   if(hasPerm("excluir")) rowBtns += '<button class="btn btn-danger" style="flex:1;font-weight:700;font-size:14px;padding:12px;background:#dc2626;color:#ffffff;border:none;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;gap:6px;" onclick="app.excluirTanque(\''+t.id+'\')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>Excluir</button>';
   if(rowBtns) html += '<div class="row-btns no-print" style="display:flex;gap:10px;margin-bottom:10px;">'+rowBtns+'</div>';
 
@@ -3091,9 +3102,9 @@ function renderEditarTanque(){
   '</select></div>';
   html += '<div class="field"><label>Município</label><input id="e_municipio" value="'+esc(editTankForm.municipio)+'"/></div>';
   html += '<div class="loc-row">'+
-    '<div class="field"><label>Latitude</label><input id="e_lat" type="number" step="any" value="'+esc(String(editTankForm.latitude||""))+'"/></div>'+
-    '<div class="field"><label>Longitude</label><input id="e_lng" type="number" step="any" value="'+esc(String(editTankForm.longitude||""))+'"/></div>'+
-  '</div>';
+    '<div class="field"><label>Latitude</label><input id="e_lat" type="number" step="any" value="'+esc(String(editTankForm.latitude||""))+'"/></div>';
+    '<div class="field"><label>Longitude</label><input id="e_lng" type="number" step="any" value="'+esc(String(editTankForm.longitude||""))+'"/></div>';
+  html += '</div>';
   html += '<button type="button" class="btn btn-loc no-print" onclick="app.usarLocalizacao(\'e_lat\',\'e_lng\')">Usar minha localização atual (GPS)</button>';
 
   html += '<div class="section-title">Foto do tanque</div>';
@@ -3503,8 +3514,8 @@ function renderRelatorio(){
     '<div class="info-box"><div class="l">Data da Instalação</div><div class="v" style="font-size:12.5px;">'+dataInstStr+'</div></div>'+
     '<div class="info-box"><div class="l">Instalado Por</div><div class="v" style="font-size:12.5px;">'+instaladorStr+'</div></div>'+
   '</div>';
-  html += '<div class="info-box" style="margin-bottom:6px;"><div class="l">Produtor Atual / Contrato</div><div class="v" style="font-size:13px;">'+prod+' · <strong>Contrato: '+temContratoStr+'</strong></div></div>';
-  html += '<div class="info-box"><div class="l">Localização & Coordenadas GPS</div><div class="v" style="font-size:12.5px;font-weight:500;">'+esc(tankMunicipio(t))+' · '+fmtLatLng(tankLat(t), tankLng(t))+'</div></div>';
+  html += '<div class="info-box" style="margin-bottom:6px;"><div class="l">Produtor Atual / Contrato</div><div class="v" style="font-size:13px;">'+prod+' · <strong>Contrato: '+temContratoStr+'</strong></div></div>'+
+  '<div class="info-box"><div class="l">Localização & Coordenadas GPS</div><div class="v" style="font-size:12.5px;font-weight:500;">'+esc(tankMunicipio(t))+' · '+fmtLatLng(tankLat(t), tankLng(t))+'</div></div>';
 
   if(t.foto){
     html += '<div class="info-box" style="margin-top:6px;margin-bottom:6px;"><div class="l">Foto Principal do Tanque</div>'+
@@ -3581,8 +3592,8 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v9.5.0</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Sincronização em Tempo Real de Edições e Vínculo de Produtores).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v9.7.0</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Padronização Universal de Unidades: Matriz, Naque e Fidelândia).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
 
