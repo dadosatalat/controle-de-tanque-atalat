@@ -800,16 +800,23 @@ function getUnidadeUuid(unid){
 }
 
 function unidadeNome(id){
-  if(!id) return "Matriz";
-  var str = String(id).toLowerCase();
+  if(!id) return "Naque";
+  var str = String(id).toLowerCase().trim();
   if(str.indexOf("9adeb73d") !== -1 || str === "naque" || str.indexOf("22222222") !== -1) return "Naque";
   if(str.indexOf("ab440a55") !== -1 || str === "matriz" || str.indexOf("11111111") !== -1) return "Matriz";
-  if(str.indexOf("fidelandia") !== -1 || str.indexOf("33333333") !== -1) return "Fidelândia";
+  if(str.indexOf("fidelandia") !== -1 || str.indexOf("33333333") !== -1 || str.indexOf("filial") !== -1) return "Fidelândia";
 
   var u = (state.unidades || []).find(function(item){
     return item.id === id || (item.nome && item.nome.toLowerCase() === str);
   });
-  return u ? u.nome : (str.length > 20 ? "Naque" : id);
+  if(u) return u.nome;
+
+  var legacyMap = {
+    "5af86a9d-0fb6-4d88-8bf2-62d4a8e192d3": "Fidelândia"
+  };
+  if(legacyMap[id]) return legacyMap[id];
+
+  return "Naque";
 }
 function findProfile(idOrUser){
   if(!idOrUser || !Array.isArray(state.profiles)) return null;
@@ -2091,7 +2098,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v9.8.0";
+  var CURRENT_VERSION = "v9.9.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2393,9 +2400,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.8.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.9.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.8.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.9.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3575,8 +3582,8 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v9.8.0</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Persistência Autoritativa de Transferência de Unidade e Sincronização Global).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v9.9.0</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Normalização Definitiva de IDs Legados de Unidade).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
 
