@@ -2077,7 +2077,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v9.4.0";
+  var CURRENT_VERSION = "v9.5.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2377,9 +2377,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.4.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.5.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.4.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v9.5.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3129,7 +3129,9 @@ app.salvarEdicaoTanque = async function(){
   var rawPatrimonio = (document.getElementById("e_patrimonio").value||"").trim();
   var serie = formatSerie(rawSerie);
   var patrimonio = formatPatrimonio(rawPatrimonio);
-  var capacidade = parseInt(document.getElementById("e_capacidade").value||"0", 10);
+  var capacidade = parseInt(document.getElementById("e_capacidade").value, 10) || 0;
+  var marca = (document.getElementById("e_marca").value || "").trim();
+  var anoFab = parseInt(document.getElementById("e_ano_fabricacao").value, 10) || null;
   var status = document.getElementById("e_status").value;
   var prodMatricula = (document.getElementById("e_prodmatricula").value||"").trim();
   var prodNome = (document.getElementById("e_prodnome").value||"").trim();
@@ -3145,58 +3147,28 @@ app.salvarEdicaoTanque = async function(){
   if(!municipio){ markInvalid("e_municipio", "Informe o município."); invalid = true; }
   if(invalid) return;
 
-  var patch = {
-    serie: serie,
-    patrimonio: patrimonio,
-    capacidade: capacidade,
-    status: status,
-    produtor_nome: prodNome || null,
-    produtor_propriedade: prodProp || null,
-    produtor_matricula: prodMatricula || null,
-    contrato_assinado: contratoAssinado,
-    municipio: municipio,
-    latitude: latitude ? parseFloat(latitude) : null,
-    longitude: longitude ? parseFloat(longitude) : null
-  };
+  t.serie = serie;
+  t.patrimonio = patrimonio;
+  t.capacidade = capacidade || 0;
+  t.status = status;
+  t.marca = marca;
+  t.ano_fabricacao = anoFab;
+  t.produtor = prodNome ? { nome: prodNome, propriedade: prodProp, matricula: prodMatricula } : null;
+  if(!t.local) t.local = {};
+  t.local.municipio = municipio;
+  t.local.latitude = latitude || null;
+  t.local.longitude = longitude || null;
+  t.contrato_assinado = contratoAssinado;
 
   if(editTankForm.novaFoto){
     try{
       var pubUrl = await uploadFotoParaStorage(editTankForm.novaFoto, t.unidade_id, t.id, "capa");
-      patch.foto = pubUrl;
       t.foto = pubUrl;
     }catch(fotoErr){
-      patch.foto = editTankForm.novaFoto;
       t.foto = editTankForm.novaFoto;
     }
   }
 
-  if(isLocalId(t.id) || !isOnline()){
-    t.serie = serie; t.patrimonio = patrimonio; t.capacidade = capacidade||0; t.status = status;
-    t.produtor = prodNome ? {nome: prodNome, propriedade: prodProp} : null;
-    t.local.municipio = municipio; t.local.latitude = latitude||null; t.local.longitude = longitude||null;
-    if(!isLocalId(t.id)){
-      enqueueOp("editar_tanque", {tanqueId: t.id, patch: patch});
-    }
-    saveCache();
-    app.toast(isLocalId(t.id) ? "Tanque ainda não sincronizado — alterado apenas neste aparelho." : "Sem conexão: alteração salva neste aparelho.");
-    app.openTank(t.id);
-    return;
-  }
-
-  try{
-    var upd = await sb.from("tanques").update(patch).eq("id", t.id);
-    if(upd.error) throw upd.error;
-    await loadTanques();
-    saveCache();
-    app.toast("Tanque atualizado.");
-    app.openTank(t.id);
-  }catch(e){
-    t.serie = serie; t.patrimonio = patrimonio; t.capacidade = capacidade||0; t.status = status;
-    t.produtor = prodNome ? {nome: prodNome, propriedade: prodProp} : null;
-    t.local.municipio = municipio; t.local.latitude = latitude||null; t.local.longitude = longitude||null;
-    enqueueOp("editar_tanque", {tanqueId: t.id, patch: patch});
-    saveCache();
-    app.toast("Sem conexão: alteração salva neste aparelho.");
     app.openTank(t.id);
   }
 };
@@ -3582,8 +3554,8 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v9.4.0</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Exclusão Estritamente Individual e Limpeza de Marcadores).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v9.5.0</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Sincronização em Tempo Real de Edições e Vínculo de Produtores).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
 
