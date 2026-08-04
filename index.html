@@ -1071,27 +1071,50 @@ async function pushToCloudMaster(){
 
 async function pullFromCloudMaster(){
   try{
+    var cloudTanks = [];
+    var json = null;
     var res = await fetchWithTimeout(CLOUD_MASTER_URL + "?t=" + Date.now(), {}, 4000);
     if(res && res.ok){
-      var json = await res.json();
-      var tanksList = Array.isArray(json.tanks) ? json.tanks : (json.data && Array.isArray(json.data.tanks) ? json.data.tanks : null);
-      if(tanksList){
-        var cloudTanks = tanksList;
-        var cloudDeleted = json.deleted || (json.data ? json.data.deleted : []) || [];
-        
-        var localDeleted = getDeletedTanks();
-        cloudDeleted.forEach(function(d){
-          if(d && typeof d === "string" && (d.indexOf("tanque_") === 0 || d.indexOf("tank_") === 0 || d.length === 36)){
-            if(localDeleted.indexOf(d) === -1) localDeleted.push(d);
-          }
+      json = await res.json();
+      cloudTanks = json.tanks || (json.data ? json.data.tanks : []) || [];
+    }
+
+    try{
+      var sbRes = await sb.from("tanques").select("*");
+      if(sbRes && sbRes.data && Array.isArray(sbRes.data)){
+        var sbTanks = sbRes.data.map(function(row){
+          return {
+            id: row.id,
+            serie: row.serie || "",
+            patrimonio: row.patrimonio || "",
+            capacidade: row.capacidade || 0,
+            status: row.status || "estoque",
+            produtor: row.produtor_nome ? { nome: row.produtor_nome, propriedade: row.produtor_propriedade || "", matricula: "" } : null,
+            unidade_id: row.unidade_id || "9adeb73d-b1f4-4d0c-87e5-a6138758900b",
+            local: { municipio: "Naque - MG", latitude: "", longitude: "" },
+            historico: []
+          };
         });
-        try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify(localDeleted)); }catch(e){}
-
-        state.tanks = mergeTanks(state.tanks, cloudTanks, localDeleted);
-        saveSharedTanks(state.tanks);
-        saveCache();
+        cloudTanks = cloudTanks.concat(sbTanks);
       }
+    }catch(e){}
 
+    if(json || cloudTanks.length > 0){
+      var cloudDeleted = (json && (json.deleted || (json.data ? json.data.deleted : []))) || [];
+      var localDeleted = getDeletedTanks();
+      cloudDeleted.forEach(function(d){
+        if(d && typeof d === "string" && (d.indexOf("tanque_") === 0 || d.indexOf("tank_") === 0 || d.length === 36)){
+          if(localDeleted.indexOf(d) === -1) localDeleted.push(d);
+        }
+      });
+      try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify(localDeleted)); }catch(e){}
+
+      state.tanks = mergeTanks(state.tanks, cloudTanks, localDeleted);
+      saveSharedTanks(state.tanks);
+      saveCache();
+    }
+
+    if(json){
       var cloudDeletedProfs = json.deletedProfiles || (json.data ? json.data.deletedProfiles : []) || [];
       if(Array.isArray(cloudDeletedProfs) && cloudDeletedProfs.length > 0){
         var localDelProfs = getDeletedProfiles();
@@ -1978,7 +2001,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v8.8.0";
+  var CURRENT_VERSION = "v8.9.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2295,9 +2318,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.8.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.9.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.8.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v8.9.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3483,8 +3506,8 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v8.8.0</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Mapeamento Estrito de Colunas e UUIDs no Supabase).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v8.9.0</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 04/08/2026 (Sincronização Bidirecional Direta com Tabela de Tanques do Supabase).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
 
