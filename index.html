@@ -962,7 +962,7 @@ var DIRECT_PASS_KEY = "atalat_direct_passwords_v1";
 var DIRECT_PROFILES_KEY = "atalat_direct_profiles_v1";
 var SHARED_TANKS_KEY = "atalat_shared_tanks_v1";
 var DELETED_TANKS_KEY = "atalat_deleted_tanks_v3";
-var CLOUD_MASTER_URL = "https://jsonblob.com/api/jsonBlob/019fcca1-51d9-75d8-a540-7b9ab9f2e1e1";
+var CLOUD_MASTER_URL = "https://jsonblob.com/api/jsonBlob/019fd2b1-7c5b-78f5-8936-824669953c44";
 
 function fetchWithTimeout(url, options, ms){
   return new Promise(function(resolve){
@@ -1284,7 +1284,12 @@ function isTankDeleted(t){
   });
 }
 
-var INITIAL_SEED_TANKS = [];
+var INITIAL_SEED_TANKS = [
+  { id: '74616e6b-7365-4269-a574-713132000000', serie: 'TQ-12', patrimonio: 'PAT-00', capacidade: 220044, status: 'em_operacao', produtor: { nome: 'italo', propriedade: 'iudis', matricula: '' }, unidade_id: '9adeb73d-b1f4-4d0c-87e5-a6138758900b', local: { municipio: 'Naque - MG', latitude: '', longitude: '' }, historico: [] },
+  { id: '74616e6b-7365-4269-a574-713030303130', serie: 'TQ-00010', patrimonio: 'PAT-2001', capacidade: 2004, status: 'em_operacao', produtor: { nome: 'italo', propriedade: 'iudis', matricula: '' }, unidade_id: '9adeb73d-b1f4-4d0c-87e5-a6138758900b', local: { municipio: 'Naque - MG', latitude: '', longitude: '' }, historico: [] },
+  { id: '74616e6b-7365-4269-a574-713030303100', serie: 'TQ-0001', patrimonio: 'PAT-521', capacidade: 2000, status: 'em_operacao', produtor: { nome: 'Rosana Mendes Costa', propriedade: 'Fazenda Santa Luzia', matricula: '' }, unidade_id: 'ab440a55-abed-4482-8f09-1c6fe7421069', local: { municipio: 'Naque - MG', latitude: '', longitude: '' }, historico: [] },
+  { id: '74616e6b-7365-4269-a574-713230303100', serie: 'TQ-2001', patrimonio: 'PAT-2001', capacidade: 2000, status: 'em_operacao', produtor: { nome: 'italo', propriedade: 'aaga', matricula: '' }, unidade_id: '9adeb73d-b1f4-4d0c-87e5-a6138758900b', local: { municipio: 'Naque - MG', latitude: '', longitude: '' }, historico: [] }
+];
 
 function getSharedTanks(){
   try{
@@ -2094,7 +2099,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v10.0.0";
+  var CURRENT_VERSION = "v10.1.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2411,9 +2416,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v10.0.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v10.1.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v10.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v10.1.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3596,8 +3601,8 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v10.0.0 (Otimizado)</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 05/08/2026 (Refatoração, Otimização de Performance e Sincronização Estável).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v10.1.0</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 05/08/2026 (Endpoint de Nuvem Permanente e Restauração Global dos 4 Tanques).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
 
