@@ -1003,9 +1003,11 @@ function mergeHistories(h1, h2){
 
 function mergeTanks(localList, cloudList, deletedList){
   var map = new Map();
+  var delList = deletedList || getDeletedTanks();
+
   (localList || []).forEach(function(t){
     var clean = sanitizeTank(t);
-    if(clean){
+    if(clean && !isTankDeleted(clean, delList)){
       var key = (clean.serie || clean.id || "").toString().trim().toUpperCase();
       if(key) map.set(key, clean);
     }
@@ -1013,58 +1015,49 @@ function mergeTanks(localList, cloudList, deletedList){
 
   (cloudList || []).forEach(function(t){
     var clean = sanitizeTank(t);
-    if(clean){
+    if(clean && !isTankDeleted(clean, delList)){
       var key = (clean.serie || clean.id || "").toString().trim().toUpperCase();
       if(!key) return;
       if(!map.has(key)){
-        if(!isTankDeleted(clean)) map.set(key, clean);
+        map.set(key, clean);
       } else {
         var ext = map.get(key);
-        if(!isTankDeleted(clean)){
-          var mergedHist = mergeHistories(ext.historico, clean.historico);
-          var mergedTank;
-          if(ext.pendente){
-            mergedTank = Object.assign({}, clean, ext);
-          } else {
-            mergedTank = Object.assign({}, ext, clean);
-          }
-          mergedTank.historico = mergedHist;
-          map.set(key, mergedTank);
-        }
+        var mergedHist = mergeHistories(ext.historico, clean.historico);
+        var mergedTank = Object.assign({}, clean, ext);
+        mergedTank.historico = mergedHist;
+        map.set(key, mergedTank);
       }
     }
   });
 
   var result = Array.from(map.values()).filter(function(t){
-    return !isTankDeleted(t);
+    return !isTankDeleted(t, delList);
   });
   return result;
 }
 
 async function pushToCloudMaster(){
   try{
-    state.tanks = dedupeTanks(state.tanks||[]).map(sanitizeTank).filter(Boolean);
+    var delList = getDeletedTanks();
+    state.tanks = dedupeTanks(state.tanks||[]).map(sanitizeTank).filter(function(t){
+      return Boolean(t) && !isTankDeleted(t, delList);
+    });
     state.tanks.forEach(function(t){
       t.id = tankToUUID(t);
     });
 
-    var cleanTanks = (state.tanks||[]).map(function(t){
+    var cleanTanks = (state.tanks||[]).filter(function(t){
+      return !isTankDeleted(t, delList);
+    }).map(function(t){
       var copy = Object.assign({}, t);
       delete copy.pendente;
       return copy;
     });
 
-    var localDeleted = getDeletedTanks();
-    var activeKeys = new Set();
-    (state.tanks || []).forEach(function(t){
-      if(t.id) activeKeys.add(String(t.id).toUpperCase().trim());
-      if(t.serie) activeKeys.add(String(t.serie).toUpperCase().trim());
-      if(t.patrimonio) activeKeys.add(String(t.patrimonio).toUpperCase().trim());
-      var tu = tankToUUID(t).toUpperCase().trim();
-      if(tu) activeKeys.add(tu);
-    });
-    var cleanDeleted = localDeleted.filter(function(d){
-      return !activeKeys.has(String(d).toUpperCase().trim());
+    var cleanDeleted = [];
+    (delList || []).forEach(function(d){
+      var norm = String(d || "").trim().toUpperCase();
+      if(norm && cleanDeleted.indexOf(norm) === -1) cleanDeleted.push(norm);
     });
     try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify(cleanDeleted)); }catch(e){}
 
@@ -2103,7 +2096,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v10.1.0";
+  var CURRENT_VERSION = "v11.0.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2405,9 +2398,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v10.1.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v11.0.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v10.1.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v11.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
