@@ -1056,8 +1056,9 @@ async function pushToCloudMaster(){
     });
 
     if(cleanTanks && cleanTanks.length > 0){
-      var sbTanks = cleanTanks.map(function(t){
-        return {
+      for(var i=0; i<cleanTanks.length; i++){
+        var t = cleanTanks[i];
+        var sbRow = {
           id: tankToUUID(t),
           serie: String(t.serie || "").trim(),
           patrimonio: String(t.patrimonio || "").trim(),
@@ -1067,8 +1068,12 @@ async function pushToCloudMaster(){
           produtor_propriedade: t.produtor ? (t.produtor.propriedade || null) : null,
           unidade_id: (t.unidade_id && t.unidade_id.length === 36) ? t.unidade_id : "9adeb73d-b1f4-4d0c-87e5-a6138758900b"
         };
-      });
-      await sb.from("tanques").upsert(sbTanks, { onConflict: "id" });
+        try{
+          await sb.from("tanques").update(sbRow).eq("id", sbRow.id);
+          await sb.from("tanques").update(sbRow).eq("serie", sbRow.serie);
+          await sb.from("tanques").upsert([sbRow], { onConflict: "id" });
+        }catch(e){}
+      }
     }
   }catch(e){}
 }
@@ -2032,7 +2037,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v50.0.0";
+  var CURRENT_VERSION = "v60.0.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2354,9 +2359,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v50.0.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v60.0.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v50.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v60.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3154,8 +3159,10 @@ app.salvarEdicaoTanque = async function(){
       status: status,
       produtor_nome: prodNome || null,
       produtor_propriedade: prodProp || null,
-      unidade_id: (unidadeId && unidadeId.length === 36) ? unidadeId : null
+      unidade_id: (unidadeId && unidadeId.length === 36) ? unidadeId : "9adeb73d-b1f4-4d0c-87e5-a6138758900b"
     };
+    await sb.from("tanques").update(sbPayload).eq("id", sbPayload.id);
+    await sb.from("tanques").update(sbPayload).eq("serie", serie);
     await sb.from("tanques").upsert([sbPayload], { onConflict: "id" });
   }catch(e){
     console.warn("Supabase update warning:", e);
