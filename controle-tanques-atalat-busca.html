@@ -1142,7 +1142,9 @@ async function pullFromCloudMaster(){
           try{ sb.from("tanques").delete().eq("id", dupId); }catch(e){}
         });
 
-        var sbTanks = Array.from(seenSbSeries.values()).map(function(row){
+        var sbTanks = Array.from(seenSbSeries.values()).filter(function(row){
+          return !isTankDeleted(row);
+        }).map(function(row){
           return {
             id: tankToUUID(row),
             serie: row.serie || "",
@@ -1164,7 +1166,7 @@ async function pullFromCloudMaster(){
       var cloudDeleted = (json && (json.deleted || (json.data ? json.data.deleted : []))) || [];
       var localDeleted = getDeletedTanks();
       cloudDeleted.forEach(function(d){
-        if(d && typeof d === "string" && (d.indexOf("tanque_") === 0 || d.indexOf("tank_") === 0 || d.length === 36)){
+        if(d && typeof d === "string" && d.trim().length > 0){
           if(localDeleted.indexOf(d) === -1) localDeleted.push(d);
         }
       });
@@ -2101,7 +2103,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v12.0.0";
+  var CURRENT_VERSION = "v13.0.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2403,9 +2405,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v12.0.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v13.0.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v12.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v13.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
