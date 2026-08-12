@@ -1042,166 +1042,70 @@ async function pushToCloudMaster(){
     state.tanks = dedupeTanks(state.tanks||[]).map(sanitizeTank).filter(function(t){
       return Boolean(t) && !isTankDeleted(t, delList);
     });
-    state.tanks.forEach(function(t){
-      t.id = tankToUUID(t);
-    });
 
     var cleanTanks = (state.tanks||[]).filter(function(t){
       return !isTankDeleted(t, delList);
-    }).map(function(t){
-      var copy = Object.assign({}, t);
-      delete copy.pendente;
-      return copy;
     });
 
-    var cleanDeleted = [];
-    (delList || []).forEach(function(d){
-      var norm = String(d || "").trim().toUpperCase();
-      if(norm && cleanDeleted.indexOf(norm) === -1) cleanDeleted.push(norm);
-    });
-    try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify(cleanDeleted)); }catch(e){}
-
-    var cleanProfiles = dedupeProfiles(state.profiles||[]).map(function(p){
-      return {
-        id: p.id || p.usuario || p.email,
-        nome: p.nome || p.usuario || p.email,
-        usuario: p.usuario || p.email,
-        email: p.email || p.usuario,
-        papel: p.papel || "operador",
-        unidade_id: p.unidade_id || null
-      };
-    });
-
-    var payloadStr = JSON.stringify({
-      updatedAt: Date.now(),
-      tanks: cleanTanks,
-      deleted: cleanDeleted,
-      deletedProfiles: getDeletedProfiles(),
-      profiles: cleanProfiles
-    });
-
-    await fetchWithTimeout(CLOUD_MASTER_URL, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: payloadStr
-    }, 4000);
-
-    try{
-      if(cleanTanks && cleanTanks.length > 0){
-        var sbTanks = cleanTanks.map(function(t){
-          return {
-            id: tankToUUID(t),
-            serie: String(t.serie || "").trim(),
-            patrimonio: String(t.patrimonio || "").trim(),
-            capacidade: parseInt(t.capacidade, 10) || 0,
-            status: String(t.status || "estoque").trim(),
-            produtor_nome: t.produtor ? (t.produtor.nome || null) : null,
-            produtor_propriedade: t.produtor ? (t.produtor.propriedade || null) : null,
-            unidade_id: (t.unidade_id && t.unidade_id.length === 36) ? t.unidade_id : null
-          };
-        });
-        await sb.from("tanques").upsert(sbTanks, { onConflict: "id" });
-      }
-    }catch(e){}
+    if(cleanTanks && cleanTanks.length > 0){
+      var sbTanks = cleanTanks.map(function(t){
+        return {
+          id: tankToUUID(t),
+          serie: String(t.serie || "").trim(),
+          patrimonio: String(t.patrimonio || "").trim(),
+          capacidade: parseInt(t.capacidade, 10) || 0,
+          status: String(t.status || "estoque").trim(),
+          produtor_nome: t.produtor ? (t.produtor.nome || null) : null,
+          produtor_propriedade: t.produtor ? (t.produtor.propriedade || null) : null,
+          unidade_id: (t.unidade_id && t.unidade_id.length === 36) ? t.unidade_id : "9adeb73d-b1f4-4d0c-87e5-a6138758900b"
+        };
+      });
+      await sb.from("tanques").upsert(sbTanks, { onConflict: "id" });
+    }
   }catch(e){}
 }
 
 async function pullFromCloudMaster(){
   try{
-    var cloudTanks = [];
-    var json = null;
-    var res = await fetchWithTimeout(CLOUD_MASTER_URL + "?t=" + Date.now(), {}, 4000);
-    if(res && res.ok){
-      json = await res.json();
-      cloudTanks = json.tanks || (json.data ? json.data.tanks : []) || [];
-    }
+    var sbRes = await sb.from("tanques").select("*");
+    if(sbRes && sbRes.data && Array.isArray(sbRes.data) && sbRes.data.length > 0){
+      var sbHistRes = null;
+      try{ sbHistRes = await sb.from("historico").select("*"); }catch(he){}
+      var allHist = (sbHistRes && sbHistRes.data && Array.isArray(sbHistRes.data)) ? sbHistRes.data : [];
 
-    try{
-      var sbRes = await sb.from("tanques").select("*");
-      if(sbRes && sbRes.data && Array.isArray(sbRes.data)){
-        var seenSbSeries = new Map();
-        var dupsToDelete = [];
-
-        sbRes.data.forEach(function(row){
-          var key = (row.serie || row.patrimonio || row.id || "").toString().toUpperCase().trim();
-          var canonicalId = tankToUUID(row);
-          if(!seenSbSeries.has(key)){
-            seenSbSeries.set(key, row);
-          } else {
-            if(row.id !== canonicalId){
-              dupsToDelete.push(row.id);
-            } else {
-              var prev = seenSbSeries.get(key);
-              if(prev.id !== canonicalId) dupsToDelete.push(prev.id);
-              seenSbSeries.set(key, row);
-            }
-          }
-        });
-
-        dupsToDelete.forEach(function(dupId){
-          try{ sb.from("tanques").delete().eq("id", dupId); }catch(e){}
-        });
-
-        var sbTanks = Array.from(seenSbSeries.values()).filter(function(row){
-          return !isTankDeleted(row);
-        }).map(function(row){
-          return {
-            id: tankToUUID(row),
-            serie: row.serie || "",
-            patrimonio: row.patrimonio || "",
-            capacidade: row.capacidade || 0,
-            status: row.status || "estoque",
-            produtor: row.produtor_nome ? { nome: row.produtor_nome, propriedade: row.produtor_propriedade || "", matricula: "" } : null,
-            unidade_id: row.unidade_id || "9adeb73d-b1f4-4d0c-87e5-a6138758900b",
-            local: { municipio: "Naque - MG", latitude: "", longitude: "" },
-            historico: []
-          };
-        });
-
-        cloudTanks = cloudTanks.concat(sbTanks);
-      }
-    }catch(e){}
-
-    if(json || cloudTanks.length > 0){
-      var cloudDeleted = (json && (json.deleted || (json.data ? json.data.deleted : []))) || [];
-      var localDeleted = getDeletedTanks();
-      cloudDeleted.forEach(function(d){
-        if(d && typeof d === "string" && d.trim().length > 0){
-          if(localDeleted.indexOf(d) === -1) localDeleted.push(d);
-        }
+      var freshTanks = sbRes.data.map(function(row){
+        var tankHist = allHist.filter(function(h){ return h.tanque_id === row.id; });
+        return {
+          id: tankToUUID(row),
+          serie: row.serie || "",
+          patrimonio: row.patrimonio || "",
+          capacidade: parseInt(row.capacidade, 10) || 2000,
+          status: row.status || "estoque",
+          produtor: row.produtor_nome ? {
+            nome: row.produtor_nome,
+            propriedade: row.produtor_propriedade || "",
+            matricula: ""
+          } : null,
+          unidade_id: row.unidade_id || "9adeb73d-b1f4-4d0c-87e5-a6138758900b",
+          local: { municipio: row.municipio || "Naque - MG", latitude: row.latitude || "", longitude: row.longitude || "" },
+          historico: tankHist.map(function(h){
+            return {
+              id: h.id,
+              data: h.data,
+              tipo: h.tipo,
+              produtor: h.produtor,
+              litros: h.litros,
+              desc: h.desc_texto || "",
+              fotos: []
+            };
+          })
+        };
       });
-      try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify(localDeleted)); }catch(e){}
 
-      state.tanks = mergeTanks(state.tanks, cloudTanks, localDeleted);
+      var delList = getDeletedTanks();
+      state.tanks = freshTanks.filter(function(t){ return !isTankDeleted(t, delList); });
       saveSharedTanks(state.tanks);
       saveCache();
-    }
-
-    if(json){
-      var cloudDeletedProfs = json.deletedProfiles || (json.data ? json.data.deletedProfiles : []) || [];
-      if(Array.isArray(cloudDeletedProfs) && cloudDeletedProfs.length > 0){
-        var localDelProfs = getDeletedProfiles();
-        cloudDeletedProfs.forEach(function(dp){
-          var norm = String(dp).toLowerCase().trim();
-          if(norm && localDelProfs.indexOf(norm) === -1) localDelProfs.push(norm);
-        });
-        try{ localStorage.setItem(DELETED_PROFILES_KEY, JSON.stringify(localDelProfs)); }catch(e){}
-        checkActiveUserRevocation();
-      }
-
-      var cloudProfiles = json.profiles || (json.data ? json.data.profiles : null);
-      if(Array.isArray(cloudProfiles) && cloudProfiles.length > 0){
-        var cloudUserKeys = cloudProfiles.map(function(p){ return (p.usuario||p.email||"").toLowerCase().trim(); });
-        var localDel = getDeletedProfiles();
-        var cleanedLocalDel = localDel.filter(function(d){
-          return cloudUserKeys.indexOf(d.toLowerCase().trim()) === -1;
-        });
-        try{ localStorage.setItem(DELETED_PROFILES_KEY, JSON.stringify(cleanedLocalDel)); }catch(e){}
-
-        var mergedProfs = dedupeProfiles([].concat(state.profiles || [], cloudProfiles));
-        state.profiles = mergedProfs;
-        try{ saveDirectProfiles(state.profiles); }catch(e){}
-      }
     }
   }catch(e){}
 }
@@ -2098,7 +2002,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v22.0.0";
+  var CURRENT_VERSION = "v30.0.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2419,9 +2323,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v22.0.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v30.0.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v22.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v30.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
