@@ -3567,67 +3567,55 @@ app.onRelFilter = function(field, value){ relFilter[field] = value; renderRelato
 // ---------- CONFIGURACOES ----------
 function renderConfig(){
   document.getElementById("topTitle").textContent = "Configurações";
-  document.getElementById("topSub").textContent = "Usuários e permissões";
+  document.getElementById("topSub").textContent = "Usuários, sincronização e preferências";
 
   var me = state.me;
-  var html = '';
-
-  html += '<div class="current-user-card">'+
-    '<div class="l">Sua conta</div>'+
-    '<div class="v">'+esc(me.nome)+' · <span class="badge '+ROLE_CLASS[me.papel]+'">'+ROLE_LABEL[me.papel]+'</span></div>'+
-    '<div class="note">'+esc(me.usuario || me.nome || '')+(me.unidade_id ? ' · Unidade: '+esc(unidadeNome(me.unidade_id)) : '')+'</div>'+
-    '<button class="btn btn-danger" style="margin-top:12px;" onclick="app.sair()">Sair da conta</button>'+
-  '</div>';
-
   var pend = pendingCount();
   var theme = localStorage.getItem("atalat_theme") || "light";
+  var html = '';
 
-  html += '<div class="section-title">Aparência do Aplicativo</div>';
-  html += '<div class="current-user-card" style="margin-bottom:18px;">'+
-    '<div class="l">Tema Visual</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">'+(theme === "dark" ? '🌙 Modo Escuro Ativo' : '☀️ Modo Claro Ativo')+'</div>'+
-    '<div class="note" style="margin-top:4px;">Alterne entre os modos Claro e Escuro conforme a iluminação do ambiente.</div>'+
-    '<button class="btn btn-primary" style="margin-top:12px;" onclick="app.toggleTheme()">'+(theme === "dark" ? '☀️ Mudar para Modo Claro' : '🌙 Ativar Modo Escuro')+'</button>'+
-  '</div>';
-
-  html += '<div class="section-title">Atualização e Sincronização</div>';
-  html += '<div class="current-user-card" style="margin-bottom:18px;">'+
-    '<div class="l">Status dos Dados</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">'+(pend === 0 ? '✅ Todos os dados estão sincronizados' : '⚠️ '+pend+' registro(s) pendente(s) de envio')+'</div>'+
-    '<div class="note" style="margin-top:4px;">Se você alterou a unidade ou papel de um usuário e não atualizou na hora, clique abaixo.</div>'+
-    '<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">'+
-      '<button class="btn btn-primary" onclick="app.forcarRecarregarDados()">🔄 Recarregar Dados do Servidor</button>'+
-      '<button class="btn btn-ghost" style="background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🧹 Limpar Cache &amp; Reinstalar App</button>'+
-      (hasPerm("admin") ? '<button class="btn btn-danger" onclick="app.resetarBaseDeTanques()">🗑️ Resetar Base de Tanques (Zerar Tudo)</button>' : '')+
+  // 1. CARD DE PERFIL E PREFERÊNCIAS
+  html += '<div class="filter-card" style="margin-bottom:16px;padding:16px;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">'+
+      '<div>'+
+        '<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Sua conta</div>'+
+        '<div style="font-size:16px;font-weight:700;margin-top:2px;">'+esc(me.nome)+' <span class="badge '+ROLE_CLASS[me.papel]+'" style="vertical-align:middle;margin-left:4px;">'+ROLE_LABEL[me.papel]+'</span></div>'+
+        '<div style="font-size:12px;color:var(--muted);margin-top:4px;">'+esc(me.usuario || me.nome || '')+(me.unidade_id ? ' · Unidade: '+esc(unidadeNome(me.unidade_id)) : '')+'</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
+        '<button class="btn btn-primary" style="padding:7px 12px;font-size:12px;" onclick="app.toggleTheme()">'+(theme === "dark" ? '☀️ Modo Claro' : '🌙 Modo Escuro')+'</button>'+
+        '<button class="btn btn-danger" style="padding:7px 12px;font-size:12px;" onclick="app.sair()">Sair da conta</button>'+
+      '</div>'+
     '</div>'+
   '</div>';
 
-  html += '<div class="section-title">Versão do Aplicativo</div>';
-  html += '<div class="current-user-card" style="margin-bottom:18px;">'+
-    '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v10.1.0</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 05/08/2026 (Endpoint de Nuvem Permanente e Restauração Global dos 4 Tanques).</div>'+
-    '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
+  // 2. CARD DE SINCRONIZAÇÃO E MANUTENÇÃO
+  html += '<div class="section-title">Sincronização &amp; Sistema</div>';
+  html += '<div class="filter-card" style="margin-bottom:18px;padding:16px;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">'+
+      '<div>'+
+        '<div style="font-size:14px;font-weight:700;">'+(pend === 0 ? '✅ Todos os dados estão sincronizados' : '⚠️ '+pend+' registro(s) pendente(s) de envio')+'</div>'+
+        '<div style="font-size:11.5px;color:var(--muted);margin-top:2px;">Versão Instalada: <strong>v2.0.1</strong> · Banco Supabase Conectado</div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
+      '<button class="btn btn-primary" style="padding:8px 12px;font-size:12px;" onclick="app.forcarSincronizacao()">'+(sincronizando ? 'Sincronizando...' : '🔄 Sincronizar Agora')+'</button>'+
+      '<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarRecarregarDados()">📥 Recarregar da Nuvem</button>'+
+      '<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🧹 Limpar Cache &amp; Reinstalar</button>'+
+      (hasPerm("admin") ? '<button class="btn btn-danger" style="padding:8px 12px;font-size:12px;" onclick="app.resetarBaseDeTanques()">🗑️ Resetar Tanques</button>' : '')+
+    '</div>'+
   '</div>';
 
-  html += '<div class="section-title">Sincronização de dados</div>';
-  html += '<div class="current-user-card" style="margin-bottom:18px;">'+
-    '<div class="l">Status da Sincronização</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">'+(pend === 0 ? '✅ Todos os dados estão sincronizados' : '⚠️ '+pend+' registro(s) pendente(s) de envio')+'</div>'+
-    '<div class="note" style="margin-top:4px;">'+(pend === 0 ? 'Nenhuma ação pendente no armazenamento local deste aparelho.' : 'Você realizou ações offline. Clique no botão abaixo para enviar os dados para o servidor.')+'</div>'+
-    '<button class="btn btn-primary" style="margin-top:12px;" onclick="app.forcarSincronizacao()">'+(sincronizando ? 'Sincronizando...' : 'Enviar dados coletados agora')+'</button>'+
-  '</div>';
-
+  // 3. REDEFINIÇÃO DE SENHA (ADMIN)
   if(hasPerm("gerenciarUsuarios")){
     html += '<div class="section-title">Gerenciar / Redefinir Senha de Usuário</div>';
     var uOptions = state.profiles.map(function(p){
       return '<option value="'+p.id+'">'+esc(p.nome)+' ('+esc(p.usuario||'')+')</option>';
     }).join('');
-    html += '<div class="current-user-card" style="margin-bottom:18px;">'+
-      '<div class="l">Redefinição Rápida de Senha</div>'+
-      '<div class="field" style="margin-top:8px;"><label>Selecione o usuário</label><select id="adm_user_select">'+uOptions+'</select></div>'+
+    html += '<div class="filter-card" style="margin-bottom:18px;padding:16px;">'+
+      '<div class="field" style="margin-top:0;"><label>Selecione o usuário</label><select id="adm_user_select">'+uOptions+'</select></div>'+
       '<div class="field"><label>Nova senha</label><div class="password-input-wrap"><input id="adm_nova_senha" type="password" placeholder="Digite a nova senha para o usuário"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'adm_nova_senha\', this)">👁️</button></div></div>'+
-      '<button class="btn btn-primary" style="margin-top:12px;" onclick="app.definirSenhaUsuario()">🔑 Redefinir Senha do Usuário</button>'+
+      '<button class="btn btn-primary" style="margin-top:12px;padding:8px 14px;font-size:12.5px;" onclick="app.definirSenhaUsuario()">🔑 Redefinir Senha do Usuário</button>'+
     '</div>';
   }
 
@@ -3637,6 +3625,7 @@ function renderConfig(){
     return;
   }
 
+  // 4. USUÁRIOS CADASTRADOS
   html += '<div class="section-title">Usuários cadastrados</div>';
   html += '<div class="note" style="margin-bottom:12px;">Para adicionar alguém, peça para a pessoa criar uma conta na tela de login. Depois defina o papel e a unidade dela aqui.</div>';
 
