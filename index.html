@@ -1592,7 +1592,7 @@ function photoSlot(fotos, key, label){
   var cls = src ? "photo-slot has-img" : "photo-slot";
   var inner = src ? '<img src="'+src+'"/><span class="label">'+label+'</span>' : '<span class="label">+ '+label+'</span>';
   return '<label class="'+cls+'">'+inner+
-    '<input type="file" accept="image/*" capture="environment" onchange="app.onPhoto(this,\''+key+'\')"/>'+
+    '<input type="file" accept="image/*" onchange="app.onPhoto(this,\''+key+'\')"/>'+
   '</label>';
 }
 
@@ -2075,7 +2075,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.2";
+  var CURRENT_VERSION = "v2.0.3";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2361,9 +2361,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.2</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.3</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.2</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.3</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3142,7 +3142,7 @@ function renderEditarTanque(){
   var clsFoto = srcFoto ? "photo-slot has-img" : "photo-slot";
   var innerFoto = srcFoto ? '<img src="'+srcFoto+'" onclick="app.openPhotoModal(\''+srcFoto+'\')"/><span class="label">Alterar foto do tanque</span>' : '<span class="label">+ Adicionar foto do tanque</span>';
   html += '<label class="'+clsFoto+'">'+innerFoto+
-    '<input type="file" accept="image/*" capture="environment" onchange="app.onEditTankPhoto(this)"/>'+
+    '<input type="file" accept="image/*" onchange="app.onEditTankPhoto(this)"/>'+
   '</label>';
 
   html += '<div class="row-btns" style="margin-top:18px;">'+
