@@ -2075,7 +2075,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.1";
+  var CURRENT_VERSION = "v2.0.2";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2361,9 +2361,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.1</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.2</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.1</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.2</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -2454,9 +2454,10 @@ function renderPainel(){
   html += '<div class="search-row search-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><input id="searchInput" placeholder="Buscar por série, patrimônio, produtor..." value="'+esc(state.filter)+'" oninput="app.onSearch(this.value)"/></div>';
 
   if(list.length===0){
-    html += '<div class="empty">'+(baseTanks.length===0 ? 'Nenhum tanque cadastrado nesta unidade ainda.' : 'Nenhum tanque encontrado para esse filtro.')+'</div>';
+    html += '<div class="empty" id="tankListEmpty">'+(baseTanks.length===0 ? 'Nenhum tanque cadastrado nesta unidade ainda.' : 'Nenhum tanque encontrado para esse filtro.')+'</div>';
   } else {
-    html += '<div class="tank-list">';
+    html += '<div class="empty" id="tankListEmpty" style="display:none;">Nenhum tanque encontrado para esse filtro.</div>';
+    html += '<div class="tank-list" id="tankListContainer">';
     list.forEach(function(t){
       var prodLine = t.produtor ? fmtProdutorDisplay(t.produtor) : 'Sem produtor vinculado';
       html += '<div class="card" onclick="app.openTank(\''+t.id+'\')">'+
@@ -2476,16 +2477,27 @@ function renderPainel(){
 }
 app.onSearch = function(v){
   state.filter = v;
-  var inputEl = document.getElementById("searchInput");
-  var cursorStart = inputEl ? inputEl.selectionStart : null;
-  var cursorEnd = inputEl ? inputEl.selectionEnd : null;
-  renderPainel();
-  var newInputEl = document.getElementById("searchInput");
-  if(newInputEl){
-    newInputEl.focus();
-    if(cursorStart !== null && cursorEnd !== null){
-      try{ newInputEl.setSelectionRange(cursorStart, cursorEnd); }catch(e){}
+  var term = (v || "").toString().trim().toLowerCase();
+  var container = document.getElementById("tankListContainer");
+  var emptyEl = document.getElementById("tankListEmpty");
+
+  if(container){
+    var cards = container.querySelectorAll(".card");
+    var visibleCount = 0;
+    cards.forEach(function(card){
+      var text = card.textContent.toLowerCase();
+      if(!term || text.indexOf(term) !== -1){
+        card.style.display = "";
+        visibleCount++;
+      } else {
+        card.style.display = "none";
+      }
+    });
+    if(emptyEl){
+      emptyEl.style.display = (visibleCount === 0) ? "" : "none";
     }
+  } else {
+    renderPainel();
   }
 };
 app.onStatusFilter = function(status){
