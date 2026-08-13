@@ -705,7 +705,7 @@
 (function(){
 
 var SUPABASE_URL = "https://vksxloyqqvmfsbrnyzqp.supabase.co";
-var SUPABASE_KEY = "sb_secret_lYeNtrbqp5s4" + "snbCEJroXA_3HTZz-VQ";
+var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZrc3hsb3lxcXZtZnNicm55enFwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4ODI3MjAsImV4cCI6MjEwMDQ1ODcyMH0.pfgq4bZ9yKCpnL3BuF_1bGlb8uaM0_oe3QS37iEveh8";
 var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 var ROLE_LABEL = {admin:"Administrador", operador:"Operador de campo", consulta:"Consulta"};
@@ -2037,7 +2037,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v90.0.0";
+  var CURRENT_VERSION = "v2.0.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2159,46 +2159,23 @@ app.entrar = async function(){
   }
 
   var fullEmail = email.indexOf("@") === -1 ? email + "@gmail.com" : email;
+  var res;
   try {
-    var res = await sb.auth.signInWithPassword({email: fullEmail, password: senha});
-    if(!res.error && res.data && res.data.session){
-      state.session = res.data.session;
-      app.toast("🎉 Login efetuado com sucesso!");
-      await bootAfterAuthChange();
-      return;
-    }
-  } catch(e){}
+    res = await sb.auth.signInWithPassword({email: fullEmail, password: senha});
+  } catch(e){
+    app.toast("⚠️ Não foi possível contatar o servidor. Verifique sua conexão.");
+    return;
+  }
 
-  var directPasses = getDirectPasswords();
-  var matchedPass = directPasses[email] || directPasses[normEmail] || directPasses[fullEmail];
-  var UNIVERSAL_VALID_PASSWORDS = ["123456", "12345678", "admin", "atalat123", "atalat"];
-  var isUniversalPass = UNIVERSAL_VALID_PASSWORDS.indexOf(senha) !== -1 || (matchedPass && matchedPass === senha) || (senha.length >= 4);
-
-  if(isUniversalPass){
-    var prof = (state.profiles || []).find(function(p){ 
-      var u = (p.usuario || p.email || p.nome || "").toLowerCase().trim();
-      return u === email || u === normEmail || normalizeUserKey(u) === normEmail || u.indexOf(normEmail) !== -1; 
-    });
-
-    if(!prof){
-      var defaultName = email.split("@")[0];
-      defaultName = defaultName.charAt(0).toUpperCase() + defaultName.slice(1);
-      prof = { id: toUUID(email), nome: defaultName, usuario: fullEmail, papel: "admin", unidade_id: null };
-    }
-
-    state.me = prof;
-    if(!state.me.papel) state.me.papel = "admin";
-    state.session = { user: { id: prof.id || toUUID(email), email: fullEmail } };
-    
-    await loadMe();
-    await loadUnidades();
-    await loadTanques();
-
-    saveCache();
+  if(!res.error && res.data && res.data.session){
+    state.session = res.data.session;
     app.toast("🎉 Login efetuado com sucesso!");
-    state.view = "painel";
-    state.loading = false;
-    render();
+    await bootAfterAuthChange();
+    return;
+  }
+
+  if(res.error && res.error.message && res.error.message.toLowerCase().indexOf("confirm") !== -1){
+    app.toast("⚠️ E-mail ainda não confirmado. Verifique sua caixa de entrada ou fale com um administrador.");
     return;
   }
 
@@ -2216,30 +2193,33 @@ app.criarConta = async function(){
   if(!senha || senha.length < 6){ markInvalid("a_senha2", "Senha deve ter ao menos 6 caracteres."); invalid = true; }
   if(invalid) return;
 
-  setDirectProfile(email, { papel: "operador", unidade_id: null, nome: nome });
-  setDirectPassword(email, senha);
-
-  var newProf = { id: localId("user"), nome: nome, usuario: email, papel: "operador", unidade_id: null };
+  var res;
   try{
-    var res = await sb.auth.signUp({
+    res = await sb.auth.signUp({
       email: email, password: senha,
       options: {data: {nome: nome, usuario: email, papel: "operador"}}
     });
-    if(res.data && res.data.user) newProf.id = res.data.user.id;
-  }catch(e){}
+  }catch(e){
+    app.toast("⚠️ Não foi possível contatar o servidor. Verifique sua conexão.");
+    return;
+  }
 
-  try{ await sb.from("profiles").upsert(newProf); }catch(profErr){}
+  if(res.error){
+    app.toast("⚠️ Não foi possível criar a conta: " + (res.error.message || "tente novamente."));
+    return;
+  }
 
-  state.profiles = dedupeProfiles([].concat(state.profiles||[], [newProf]));
-  try{ saveDirectProfiles(state.profiles); }catch(e){}
+  if(res.data && res.data.session){
+    state.session = res.data.session;
+    app.toast("🎉 Conta criada com sucesso!");
+    await bootAfterAuthChange();
+    return;
+  }
 
-  await pushToCloudMaster();
-
-  state.me = newProf;
-  state.session = { user: { id: newProf.id, email: email } };
-  saveCache();
-  app.toast("🎉 Conta criada com sucesso! Você já tem permissão para visualizar e editar os dados da plataforma.");
-  bootAfterAuthChange();
+  app.toast("🎉 Conta criada! Confirme seu e-mail para poder entrar.");
+  state.authMode = "login";
+  state.view = "login";
+  render();
 };
 
 app.sair = async function(){
@@ -2343,9 +2323,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v90.0.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v90.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -2990,6 +2970,7 @@ app.salvarVisita = async function(){
   saveCache();
   saveSharedTanks(state.tanks);
 
+  var syncWriteErr = null;
   try{
     var directUuid = tankToUUID(tExist);
     var sbRowUpdate = {
@@ -3015,12 +2996,19 @@ app.salvarVisita = async function(){
       litros: parseInt(capacidade || tExist.capacidade, 10) || 0,
       desc_texto: descTxt || "(sem observações)"
     };
-    await sb.from("historico").insert([sbHistRow]);
-  }catch(directErr){}
+    var histRes = await sb.from("historico").insert([sbHistRow]);
+    if(histRes.error) syncWriteErr = histRes.error;
+  }catch(directErr){
+    syncWriteErr = directErr;
+  }
 
   await pushToCloudMaster();
   notifyOtherTabs();
-  app.toast("✅ Registro salvo e sincronizado!");
+  if(syncWriteErr){
+    app.toast("⚠️ Salvo neste aparelho, mas falhou ao sincronizar com o servidor: " + (syncWriteErr.message || "tente novamente."));
+  } else {
+    app.toast("✅ Registro salvo e sincronizado!");
+  }
   novaForm = novoFormVazio();
   novaTankBusca = "";
   app.openTank(targetId);
@@ -3164,6 +3152,7 @@ app.salvarEdicaoTanque = async function(){
   saveCache();
   saveSharedTanks(state.tanks);
 
+  var editWriteErr = null;
   try{
     var sbPayload = {
       id: tankToUUID(t),
@@ -3175,16 +3164,21 @@ app.salvarEdicaoTanque = async function(){
       produtor_propriedade: prodProp || null,
       unidade_id: (unidadeId && unidadeId.length === 36) ? unidadeId : "9adeb73d-b1f4-4d0c-87e5-a6138758900b"
     };
-    await sb.from("tanques").update(sbPayload).eq("id", sbPayload.id);
-    await sb.from("tanques").update(sbPayload).eq("serie", serie);
-    await sb.from("tanques").upsert([sbPayload], { onConflict: "id" });
+    var er1 = await sb.from("tanques").update(sbPayload).eq("id", sbPayload.id);
+    var er2 = await sb.from("tanques").update(sbPayload).eq("serie", serie);
+    var er3 = await sb.from("tanques").upsert([sbPayload], { onConflict: "id" });
+    editWriteErr = (er1 && er1.error) || (er2 && er2.error) || (er3 && er3.error) || null;
   }catch(e){
-    console.warn("Supabase update warning:", e);
+    editWriteErr = e;
   }
 
   await pushToCloudMaster();
   notifyOtherTabs();
-  app.toast("✅ Tanque atualizado e sincronizado!");
+  if(editWriteErr){
+    app.toast("⚠️ Salvo neste aparelho, mas falhou ao sincronizar: " + (editWriteErr.message || "tente novamente."));
+  } else {
+    app.toast("✅ Tanque atualizado e sincronizado!");
+  }
   app.openTank(t.id);
 };
 
@@ -3195,14 +3189,34 @@ app.excluirTanque = async function(id){
 
   if(!confirm("Excluir o tanque Série "+t.serie+"? Todo o histórico será perdido. Essa ação não pode ser desfeita.")) return;
 
+  var targetUuid = tankToUUID(t);
+  var delErr = null;
+  try{
+    var r1 = await sb.from("tanques").delete().eq("id", targetUuid);
+    if(r1.error) delErr = r1.error;
+    if(t.id && t.id !== targetUuid){
+      var r2 = await sb.from("tanques").delete().eq("id", t.id);
+      if(r2.error) delErr = delErr || r2.error;
+    }
+    if(t.serie){
+      var r3 = await sb.from("tanques").delete().eq("serie", t.serie);
+      if(r3.error) delErr = delErr || r3.error;
+    }
+  }catch(e){
+    delErr = e;
+  }
+
+  if(delErr){
+    app.toast("❌ Não foi possível excluir no servidor: " + (delErr.message || "tente novamente.") + ". O tanque foi mantido.");
+    return;
+  }
+
   markTankDeleted(t.id);
-  markTankDeleted(tankToUUID(t));
+  markTankDeleted(targetUuid);
   if(t.serie) markTankDeleted(t.serie);
   if(t.patrimonio) markTankDeleted(t.patrimonio);
 
-  var targetUuid = tankToUUID(t);
   var targetSerieNorm = (t.serie || "").toString().trim().toUpperCase();
-
   state.tanks = (state.tanks || []).filter(function(x){
     var xUuid = tankToUUID(x);
     var xSerieNorm = (x.serie || "").toString().trim().toUpperCase();
@@ -3212,14 +3226,6 @@ app.excluirTanque = async function(id){
 
   saveCache();
   saveSharedTanks(state.tanks);
-
-  try{
-    await sb.from("tanques").delete().eq("id", targetUuid);
-    if(t.id && t.id !== targetUuid) await sb.from("tanques").delete().eq("id", t.id);
-    if(t.serie) await sb.from("tanques").delete().eq("serie", t.serie);
-  }catch(e){}
-
-  await pushToCloudMaster();
   notifyOtherTabs();
   app.toast("Tanque "+t.serie+" excluído com sucesso.");
   app.goto("painel");
