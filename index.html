@@ -376,13 +376,67 @@
     overflow:hidden;
     min-height:64px;
     display:flex;
-    align-items:center;
-    justify-content:center;
+  .photo-slot-box {
+    background: var(--card);
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-bottom: 12px;
+    text-align: center;
   }
-  .photo-slot img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
-  .photo-slot .label{position:relative;z-index:1;background:rgba(255,255,255,0.85);padding:4px 8px;border-radius:6px;}
-  .photo-slot.has-img .label{position:absolute;bottom:6px;left:6px;right:6px;background:rgba(0,0,0,0.55);color:#fff;font-size:10.5px;}
-  .photo-slot input{display:none;}
+  .photo-slot-box.has-img {
+    border-style: solid;
+    border-color: var(--primary);
+  }
+  .photo-slot-box img {
+    max-height: 160px;
+    object-fit: cover;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    width: 100%;
+  }
+  .photo-slot-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+  .photo-btn-row {
+    display: flex;
+    gap: 8px;
+  }
+  .btn-photo-action {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 9px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 8px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    user-select: none;
+  }
+  .btn-photo-action input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+  .camera-btn {
+    background: var(--primary-light);
+    border: 1px solid var(--primary);
+    color: var(--primary-dark);
+  }
+  .gallery-btn {
+    background: var(--gray-bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
   .empty{text-align:center;color:var(--muted);font-size:13px;padding:30px 10px;}
   .toast{
     position:absolute;
@@ -1589,11 +1643,27 @@ app.openPhotoModal = function(src){
 
 function photoSlot(fotos, key, label){
   var src = fotos[key];
-  var cls = src ? "photo-slot has-img" : "photo-slot";
-  var inner = src ? '<img src="'+src+'"/><span class="label">'+label+'</span>' : '<span class="label">+ '+label+'</span>';
-  return '<label class="'+cls+'">'+inner+
-    '<input type="file" accept="image/*" onchange="app.onPhoto(this,\''+key+'\')"/>'+
-  '</label>';
+  var html = '<div class="photo-slot-box '+(src ? 'has-img' : '')+'">';
+  if(src){
+    html += '<img src="'+src+'" onclick="app.openPhotoModal(\''+src+'\')" style="cursor:pointer;" title="Clique para ampliar"/>';
+    html += '<div class="photo-slot-title">'+label+'</div>';
+  } else {
+    html += '<div class="photo-slot-title">+ '+label+'</div>';
+  }
+
+  html += '<div class="photo-btn-row">'+
+    '<label class="btn-photo-action camera-btn">'+
+      '📸 Tirar foto'+
+      '<input type="file" accept="image/*" capture="environment" onchange="app.onPhoto(this,\''+key+'\')"/>'+
+    '</label>'+
+    '<label class="btn-photo-action gallery-btn">'+
+      '🖼️ Galeria'+
+      '<input type="file" accept="image/*" onchange="app.onPhoto(this,\''+key+'\')"/>'+
+    '</label>'+
+  '</div>';
+
+  html += '</div>';
+  return html;
 }
 
 app.syncFormInputs = function(){
@@ -2075,7 +2145,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.3";
+  var CURRENT_VERSION = "v2.0.4";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2361,9 +2431,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.3</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.4</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.3</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.4</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3139,11 +3209,23 @@ function renderEditarTanque(){
 
   html += '<div class="section-title">Foto do tanque</div>';
   var srcFoto = editTankForm.novaFoto || editTankForm.foto;
-  var clsFoto = srcFoto ? "photo-slot has-img" : "photo-slot";
-  var innerFoto = srcFoto ? '<img src="'+srcFoto+'" onclick="app.openPhotoModal(\''+srcFoto+'\')"/><span class="label">Alterar foto do tanque</span>' : '<span class="label">+ Adicionar foto do tanque</span>';
-  html += '<label class="'+clsFoto+'">'+innerFoto+
-    '<input type="file" accept="image/*" onchange="app.onEditTankPhoto(this)"/>'+
-  '</label>';
+  html += '<div class="photo-slot-box '+(srcFoto ? 'has-img' : '')+'">';
+  if(srcFoto){
+    html += '<img src="'+srcFoto+'" onclick="app.openPhotoModal(\''+srcFoto+'\')" style="cursor:pointer;" title="Clique para ampliar"/>';
+    html += '<div class="photo-slot-title">Foto do tanque</div>';
+  } else {
+    html += '<div class="photo-slot-title">+ Foto do tanque</div>';
+  }
+  html += '<div class="photo-btn-row">'+
+    '<label class="btn-photo-action camera-btn">'+
+      '📸 Tirar foto'+
+      '<input type="file" accept="image/*" capture="environment" onchange="app.onEditTankPhoto(this)"/>'+
+    '</label>'+
+    '<label class="btn-photo-action gallery-btn">'+
+      '🖼️ Galeria'+
+      '<input type="file" accept="image/*" onchange="app.onEditTankPhoto(this)"/>'+
+    '</label>'+
+  '</div></div>';
 
   html += '<div class="row-btns" style="margin-top:18px;">'+
     '<button class="btn" onclick="app.openTank(\''+t.id+'\')">Cancelar</button>'+
