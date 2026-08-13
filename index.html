@@ -1052,14 +1052,14 @@ async function pushToCloudMaster(){
     });
 
     var cleanTanks = (state.tanks||[]).filter(function(t){
-      return !isTankDeleted(t, delList);
+      return !isTankDeleted(t, delList) && !isLocalId(t.id);
     });
 
     if(cleanTanks && cleanTanks.length > 0){
       for(var i=0; i<cleanTanks.length; i++){
         var t = cleanTanks[i];
         var sbRow = {
-          id: tankToUUID(t),
+          id: t.id,
           serie: String(t.serie || "").trim(),
           patrimonio: String(t.patrimonio || "").trim(),
           capacidade: parseInt(t.capacidade, 10) || 0,
@@ -1093,11 +1093,11 @@ async function pullFromCloudMaster(){
       var freshTanks = sbRes.data.map(function(row){
         var tankHist = allHist.filter(function(h){ return h.tanque_id === row.id; });
         var existingLocal = (state.tanks||[]).find(function(l){
-          return l.id === tankToUUID(row) || (l.serie && l.serie === row.serie);
+          return l.id === row.id || (l.serie && l.serie === row.serie);
         });
 
         return {
-          id: tankToUUID(row),
+          id: row.id,
           serie: row.serie || "",
           patrimonio: row.patrimonio || "",
           capacidade: parseInt(row.capacidade, 10) || 2000,
@@ -1439,13 +1439,16 @@ function getQueue(){
   return [];
 }
 function setQueue(q){
-  try{ localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }catch(e){}
+  try{ localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); return true; }catch(e){ console.error("Falha ao salvar fila de sincronização:", e); return false; }
 }
 function enqueueOp(kind, payload){
   var q = getQueue();
   var item = {id: localId("op"), kind: kind, payload: payload, createdAt: Date.now()};
   q.push(item);
-  setQueue(q);
+  var ok = setQueue(q);
+  if(!ok){
+    app.toast("⚠️ Armazenamento do aparelho cheio: não foi possível guardar esta alteração para envio posterior. Sincronize e libere espaço.");
+  }
   return item;
 }
 function removeFromQueueById(itemId){
@@ -1639,6 +1642,7 @@ async function processarFila(){
   sincronizando = true;
   render();
 
+  var stoppedOnError = false;
   while(q.length){
     var item = q[0];
     try{
@@ -1649,36 +1653,44 @@ async function processarFila(){
       q.shift();
       setQueue(q);
     }catch(e){
-      console.warn("Erro ao aplicar item remoto, auto-confirmando localmente:", e);
-      if(item.payload && item.payload.tanqueIdLocal){
-        var tStuck = findTank(item.payload.tanqueIdLocal);
-        if(tStuck) tStuck.pendente = false;
-      }
-      q.shift();
-      setQueue(q);
-      saveCache();
-      saveSharedTanks(state.tanks);
+      console.warn("Falha ao sincronizar item da fila, será tentado novamente mais tarde:", e);
+      stoppedOnError = true;
+      break;
     }
   }
 
   sincronizando = false;
-  state.tanks.forEach(function(t){ t.pendente = false; });
+  if(!stoppedOnError){
+    state.tanks.forEach(function(t){ t.pendente = false; t.historico && t.historico.forEach(function(h){ h.pendente = false; }); });
+  }
   saveCache();
   saveSharedTanks(state.tanks);
-  await pushToCloudMaster();
-  await pullFromCloudMaster();
+  if(!stoppedOnError){
+    await pullFromCloudMaster();
+  }
   render();
 }
 
 app.forcarSincronizacao = async function(){
+  if(!isOnline()){
+    app.toast("Você está sem conexão com a internet.");
+    return;
+  }
+  var pend = pendingCount();
+  if(pend > 0){
+    app.toast("Enviando "+pend+" registro(s) pendente(s)...");
+    await processarFila();
+  }
   app.toast("Sincronizando com a nuvem...");
   await pushToCloudMaster();
   await pullFromCloudMaster();
-  setQueue([]);
-  state.tanks.forEach(function(t){ t.pendente = false; });
   saveCache();
   saveSharedTanks(state.tanks);
-  app.toast("🎉 Dados sincronizados em tempo real!");
+  if(pendingCount() > 0){
+    app.toast("⚠️ Ainda há "+pendingCount()+" registro(s) sem enviar. Vamos tentar de novo automaticamente.");
+  } else {
+    app.toast("🎉 Dados sincronizados em tempo real!");
+  }
   render();
 };
 
@@ -1784,6 +1796,16 @@ async function aplicarItemRemoto(item){
       produtor: p.produtor || "—", litros: p.litros || 0, desc_texto: p.desc, fotos: []
     });
     if(h3.error) throw h3.error;
+    return null;
+  }
+
+  if(item.kind === "excluir_tanque"){
+    var d1 = await sb.from("tanques").delete().eq("id", p.tanqueId);
+    if(d1.error) throw d1.error;
+    if(p.serie){
+      var d2 = await sb.from("tanques").delete().eq("serie", p.serie);
+      if(d2.error) throw d2.error;
+    }
     return null;
   }
 
@@ -2608,29 +2630,32 @@ app.confirmarTransferencia = async function(tankId){
   t.status = "estoque";
   if(!Array.isArray(t.historico)) t.historico = [];
   t.historico.unshift({id: localId("hist"), data: dataHoje, tipo: "Transferência de unidade", produtor: "—", litros: litros, desc: desc, fotos: []});
+  t.pendente = true;
+  t.historico[0].pendente = true;
+
+  if(isLocalId(t.id)){
+    var qTr = getQueue();
+    var creationItemTr = qTr.find(function(qi){ return qi.kind === "novo_tanque_com_visita" && qi.payload && qi.payload.tanqueIdLocal === t.id; });
+    if(creationItemTr) creationItemTr.payload.unidadeId = novaUnidadeId;
+    setQueue(qTr);
+  } else {
+    enqueueOp("transferir_unidade", {
+      tanqueId: t.id, novaUnidadeId: novaUnidadeId,
+      data: dataHoje, produtor: "—", litros: litros, desc: desc
+    });
+  }
 
   saveCache();
   saveSharedTanks(state.tanks);
-
-  try{
-    var sbPayload = {
-      id: tankToUUID(t),
-      serie: t.serie,
-      patrimonio: t.patrimonio,
-      capacidade: t.capacidade || 0,
-      status: "estoque",
-      produtor_nome: null,
-      produtor_propriedade: null,
-      unidade_id: (novaUnidadeId && novaUnidadeId.length === 36) ? novaUnidadeId : null
-    };
-    await sb.from("tanques").upsert([sbPayload], { onConflict: "id" });
-  }catch(e){
-    console.warn("Supabase transfer warning:", e);
-  }
-
-  await pushToCloudMaster();
   notifyOtherTabs();
-  app.toast("✅ Tanque transferido para "+destinoNome+" com sucesso!");
+
+  await processarFila();
+
+  if(pendingCount() > 0){
+    app.toast("📶 Sem conexão. A transferência será enviada quando houver sinal.");
+  } else {
+    app.toast("✅ Tanque transferido para "+destinoNome+" com sucesso!");
+  }
   app.openTank(t.id);
 };
 
@@ -2983,45 +3008,57 @@ app.salvarVisita = async function(){
   state.unidadeFilter = "";
   state.statusFilter = "";
   state.filter = "";
-  saveCache();
-  saveSharedTanks(state.tanks);
 
-  var syncWriteErr = null;
-  try{
-    var directUuid = tankToUUID(tExist);
-    var sbRowUpdate = {
-      id: directUuid,
+  var fotosBase64 = novaForm.fotos || {};
+  if(isNovoSubmit){
+    novoTank.pendente = true;
+    novoTank.historico[0].pendente = true;
+    enqueueOp("novo_tanque_com_visita", {
+      tanqueIdLocal: targetId,
+      serie: serie, patrimonio: patrimonio, capacidade: capacidade || 0,
+      marca: novaForm.marca || "", ano_fabricacao: novaForm.ano_fabricacao || null,
+      unidadeId: unidadeId, municipio: novaForm.municipio || "Naque - MG",
+      latitude: novaForm.latitude || null, longitude: novaForm.longitude || null,
+      produtorNome: novaForm.produtorNome || "", produtorProp: novaForm.produtorProp || "",
+      data: novaForm.data, tipo: novaForm.tipo,
+      desc: novaForm.desc || "(sem observações)",
+      fotosBase64: fotosBase64
+    });
+  } else {
+    tExist.pendente = true;
+    tExist.historico[0].pendente = true;
+    var patchTank = {
       serie: String(tExist.serie || "").trim(),
       patrimonio: String(tExist.patrimonio || "").trim(),
       capacidade: parseInt(tExist.capacidade, 10) || 0,
       status: String(tExist.status || "estoque").trim(),
       produtor_nome: tExist.produtor ? (tExist.produtor.nome || null) : null,
       produtor_propriedade: tExist.produtor ? (tExist.produtor.propriedade || null) : null,
-      unidade_id: (tExist.unidade_id && tExist.unidade_id.length === 36) ? tExist.unidade_id : "9adeb73d-b1f4-4d0c-87e5-a6138758900b"
+      unidade_id: (tExist.unidade_id && tExist.unidade_id.length === 36) ? tExist.unidade_id : "9adeb73d-b1f4-4d0c-87e5-a6138758900b",
+      municipio: (tExist.local && tExist.local.municipio) ? tExist.local.municipio : "Naque - MG",
+      latitude: (tExist.local && tExist.local.latitude) ? tExist.local.latitude : null,
+      longitude: (tExist.local && tExist.local.longitude) ? tExist.local.longitude : null
     };
-
-    await sb.from("tanques").update(sbRowUpdate).eq("id", directUuid);
-    await sb.from("tanques").update(sbRowUpdate).eq("serie", String(tExist.serie || "").trim());
-    await sb.from("tanques").upsert([sbRowUpdate], { onConflict: "id" });
-
-    var sbHistRow = {
-      tanque_id: directUuid,
-      data: novaForm.data || new Date().toISOString().split("T")[0],
-      tipo: novaForm.tipo || "Visita",
-      produtor: isRetirada ? "—" : (novaForm.produtorNome || "—"),
+    enqueueOp("nova_visita_existente", {
+      tanqueId: tExist.id,
+      patchTank: patchTank,
+      unidadeId: tExist.unidade_id,
+      data: novaForm.data, tipo: novaForm.tipo,
+      produtorNome: isRetirada ? "—" : (novaForm.produtorNome || "—"),
       litros: parseInt(capacidade || tExist.capacidade, 10) || 0,
-      desc_texto: descTxt || "(sem observações)"
-    };
-    var histRes = await sb.from("historico").insert([sbHistRow]);
-    if(histRes.error) syncWriteErr = histRes.error;
-  }catch(directErr){
-    syncWriteErr = directErr;
+      desc: descTxt || "(sem observações)",
+      fotosBase64: fotosBase64
+    });
   }
 
-  await pushToCloudMaster();
+  saveCache();
+  saveSharedTanks(state.tanks);
   notifyOtherTabs();
-  if(syncWriteErr){
-    app.toast("⚠️ Salvo neste aparelho, mas falhou ao sincronizar com o servidor: " + (syncWriteErr.message || "tente novamente."));
+
+  await processarFila();
+
+  if(pendingCount() > 0){
+    app.toast("📶 Sem conexão no momento. Salvo neste aparelho — será enviado automaticamente quando houver sinal.");
   } else {
     app.toast("✅ Registro salvo e sincronizado!");
   }
@@ -3178,37 +3215,53 @@ app.salvarEdicaoTanque = async function(){
     }
   }
 
-  saveCache();
-  saveSharedTanks(state.tanks);
+  var patch = {
+    serie: serie,
+    patrimonio: patrimonio,
+    capacidade: t.capacidade || 0,
+    status: status,
+    produtor_nome: t.produtor ? (t.produtor.nome || null) : null,
+    produtor_propriedade: t.produtor ? (t.produtor.propriedade || null) : null,
+    unidade_id: (unidadeId && unidadeId.length === 36) ? unidadeId : "9adeb73d-b1f4-4d0c-87e5-a6138758900b",
+    municipio: t.local.municipio,
+    latitude: t.local.latitude || null,
+    longitude: t.local.longitude || null,
+    foto: t.foto || null
+  };
 
-  var editWriteErr = null;
-  try{
-    var sbPayload = {
-      id: tankToUUID(t),
-      serie: serie,
-      patrimonio: patrimonio,
-      capacidade: t.capacidade || 0,
-      status: status,
-      produtor_nome: t.produtor ? (t.produtor.nome || null) : null,
-      produtor_propriedade: t.produtor ? (t.produtor.propriedade || null) : null,
-      unidade_id: (unidadeId && unidadeId.length === 36) ? unidadeId : "9adeb73d-b1f4-4d0c-87e5-a6138758900b",
-      municipio: t.local.municipio,
-      latitude: t.local.latitude || null,
-      longitude: t.local.longitude || null,
-      foto: t.foto || null
-    };
-    var er1 = await sb.from("tanques").update(sbPayload).eq("id", sbPayload.id);
-    var er2 = await sb.from("tanques").update(sbPayload).eq("serie", serie);
-    var er3 = await sb.from("tanques").upsert([sbPayload], { onConflict: "id" });
-    editWriteErr = (er1 && er1.error) || (er2 && er2.error) || (er3 && er3.error) || null;
-  }catch(e){
-    editWriteErr = e;
+  if(isLocalId(t.id)){
+    var pendingQ = getQueue();
+    var creationItem = pendingQ.find(function(qi){ return qi.kind === "novo_tanque_com_visita" && qi.payload && qi.payload.tanqueIdLocal === t.id; });
+    if(creationItem){
+      Object.assign(creationItem.payload, {
+        serie: serie, patrimonio: patrimonio, capacidade: t.capacidade || 0,
+        marca: t.marca || "", ano_fabricacao: t.ano_fabricacao || null,
+        unidadeId: unidadeId, municipio: t.local.municipio,
+        latitude: t.local.latitude || null, longitude: t.local.longitude || null,
+        produtorNome: t.produtor ? (t.produtor.nome || "") : "",
+        produtorProp: t.produtor ? (t.produtor.propriedade || "") : ""
+      });
+      setQueue(pendingQ);
+    }
+    saveCache();
+    saveSharedTanks(state.tanks);
+    notifyOtherTabs();
+    app.toast("📶 Tanque ainda não sincronizado. As alterações serão enviadas junto com o cadastro.");
+    app.openTank(t.id);
+    return;
   }
 
-  await pushToCloudMaster();
+  t.pendente = true;
+  enqueueOp("editar_tanque", { tanqueId: t.id, patch: patch });
+
+  saveCache();
+  saveSharedTanks(state.tanks);
   notifyOtherTabs();
-  if(editWriteErr){
-    app.toast("⚠️ Salvo neste aparelho, mas falhou ao sincronizar: " + (editWriteErr.message || "tente novamente."));
+
+  await processarFila();
+
+  if(pendingCount() > 0){
+    app.toast("📶 Sem conexão no momento. Salvo neste aparelho — será enviado automaticamente quando houver sinal.");
   } else {
     app.toast("✅ Tanque atualizado e sincronizado!");
   }
@@ -3222,45 +3275,32 @@ app.excluirTanque = async function(id){
 
   if(!confirm("Excluir o tanque Série "+t.serie+"? Todo o histórico será perdido. Essa ação não pode ser desfeita.")) return;
 
-  var targetUuid = tankToUUID(t);
-  var delErr = null;
-  try{
-    var r1 = await sb.from("tanques").delete().eq("id", targetUuid);
-    if(r1.error) delErr = r1.error;
-    if(t.id && t.id !== targetUuid){
-      var r2 = await sb.from("tanques").delete().eq("id", t.id);
-      if(r2.error) delErr = delErr || r2.error;
-    }
-    if(t.serie){
-      var r3 = await sb.from("tanques").delete().eq("serie", t.serie);
-      if(r3.error) delErr = delErr || r3.error;
-    }
-  }catch(e){
-    delErr = e;
-  }
-
-  if(delErr){
-    app.toast("❌ Não foi possível excluir no servidor: " + (delErr.message || "tente novamente.") + ". O tanque foi mantido.");
-    return;
+  if(isLocalId(t.id)){
+    var q = getQueue().filter(function(qi){
+      return !(qi.payload && (qi.payload.tanqueIdLocal === t.id || qi.payload.tanqueId === t.id));
+    });
+    setQueue(q);
+  } else {
+    enqueueOp("excluir_tanque", { tanqueId: t.id, serie: t.serie || "" });
   }
 
   markTankDeleted(t.id);
-  markTankDeleted(targetUuid);
   if(t.serie) markTankDeleted(t.serie);
   if(t.patrimonio) markTankDeleted(t.patrimonio);
 
-  var targetSerieNorm = (t.serie || "").toString().trim().toUpperCase();
-  state.tanks = (state.tanks || []).filter(function(x){
-    var xUuid = tankToUUID(x);
-    var xSerieNorm = (x.serie || "").toString().trim().toUpperCase();
-    var isMatch = (x.id === id) || (x.id === t.id) || (xUuid === targetUuid) || (targetSerieNorm && xSerieNorm === targetSerieNorm);
-    return !isMatch;
-  });
+  state.tanks = (state.tanks || []).filter(function(x){ return x.id !== t.id; });
 
   saveCache();
   saveSharedTanks(state.tanks);
   notifyOtherTabs();
-  app.toast("Tanque "+t.serie+" excluído com sucesso.");
+
+  await processarFila();
+
+  if(pendingCount() > 0){
+    app.toast("📶 Sem conexão. A exclusão será enviada ao servidor quando houver sinal.");
+  } else {
+    app.toast("Tanque "+t.serie+" excluído com sucesso.");
+  }
   app.goto("painel");
 };
 
