@@ -1851,8 +1851,19 @@ async function aplicarItemRemoto(item){
   }
 
   if(item.kind === "editar_tanque"){
-    var u2 = await sb.from("tanques").update(p.patch).eq("id", p.tanqueId);
-    if(u2.error) throw u2.error;
+    var targetUuid = p.tanqueId ? tankToUUID(p.tanqueId) : "";
+    var targetSerie = p.patch ? (p.patch.serie || "") : "";
+
+    try{
+      await sb.from("tanques").update(p.patch).eq("id", p.tanqueId);
+      if(targetUuid && targetUuid !== p.tanqueId){
+        await sb.from("tanques").update(p.patch).eq("id", targetUuid);
+      }
+      if(targetSerie){
+        await sb.from("tanques").update(p.patch).eq("serie", targetSerie);
+      }
+      await sb.from("tanques").upsert([{ id: targetUuid || p.tanqueId, ...p.patch }], { onConflict: "id" });
+    }catch(e){}
     return null;
   }
 
@@ -2148,7 +2159,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.5";
+  var CURRENT_VERSION = "v2.0.6";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2434,9 +2445,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.5</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.6</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.5</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.6</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3183,8 +3194,8 @@ function renderEditarTanque(){
   document.getElementById("topSub").textContent = "Série "+t.serie;
 
   var html = '';
-  html += '<div class="field"><label>Número de série</label><div class="input-prefix-wrap"><span class="input-prefix">TQ-</span><input id="e_serie" inputmode="numeric" value="'+esc(cleanSerieNum(editTankForm.serie))+'" placeholder="2301"/></div></div>';
-  html += '<div class="field"><label>Número de patrimônio</label><div class="input-prefix-wrap"><span class="input-prefix">PAT-</span><input id="e_patrimonio" inputmode="numeric" value="'+esc(cleanPatrimonioNum(editTankForm.patrimonio))+'" placeholder="0512"/></div></div>';
+  html += '<div class="field"><label>Número de série</label><div class="input-prefix-wrap"><span class="input-prefix">TQ-</span><input id="e_serie" value="'+esc(cleanSerieNum(editTankForm.serie))+'" placeholder="Ex: HCV 018 ou 2301"/></div></div>';
+  html += '<div class="field"><label>Número de patrimônio</label><div class="input-prefix-wrap"><span class="input-prefix">PAT-</span><input id="e_patrimonio" value="'+esc(cleanPatrimonioNum(editTankForm.patrimonio))+'" placeholder="Ex: 062 ou 0512"/></div></div>';
   html += '<div class="field"><label>Marca do tanque</label><input id="e_marca" value="'+esc(editTankForm.marca||"")+'" placeholder="Ex: Westfalia, Reafrio, Plaszom..."/></div>';
   html += '<div class="field"><label>Ano de fabricação</label><input id="e_ano_fabricacao" type="number" inputmode="numeric" value="'+esc(String(editTankForm.ano_fabricacao||""))+'" placeholder="Ex: 2024"/></div>';
   html += '<div class="field"><label>Capacidade (litros)</label><input id="e_capacidade" type="number" value="'+esc(String(editTankForm.capacidade||""))+'"/></div>';
@@ -3312,53 +3323,45 @@ app.salvarEdicaoTanque = async function(){
     }
   }
 
-  var patch = {
-    serie: serie,
-    patrimonio: patrimonio,
-    capacidade: t.capacidade || 0,
-    status: status,
-    produtor_nome: t.produtor ? (t.produtor.nome || null) : null,
-    produtor_propriedade: t.produtor ? (t.produtor.propriedade || null) : null,
-    unidade_id: (unidadeId && unidadeId.length === 36) ? unidadeId : "9adeb73d-b1f4-4d0c-87e5-a6138758900b",
-    municipio: t.local.municipio,
-    latitude: t.local.latitude || null,
-    longitude: t.local.longitude || null,
-    foto: t.foto || null
-  };
+  var editWriteErr = null;
+  try{
+    var sbPayload = {
+      id: tankToUUID(t),
+      serie: serie,
+      patrimonio: patrimonio,
+      capacidade: t.capacidade || 0,
+      status: status,
+      marca: t.marca || null,
+      ano_fabricacao: t.ano_fabricacao || null,
+      produtor_nome: t.produtor ? (t.produtor.nome || null) : null,
+      produtor_propriedade: t.produtor ? (t.produtor.propriedade || null) : null,
+      unidade_id: (unidadeId && unidadeId.length === 36) ? unidadeId : "9adeb73d-b1f4-4d0c-87e5-a6138758900b",
+      municipio: t.local.municipio,
+      latitude: t.local.latitude || null,
+      longitude: t.local.longitude || null,
+      foto: t.foto || null
+    };
 
-  if(isLocalId(t.id)){
-    var pendingQ = getQueue();
-    var creationItem = pendingQ.find(function(qi){ return qi.kind === "novo_tanque_com_visita" && qi.payload && qi.payload.tanqueIdLocal === t.id; });
-    if(creationItem){
-      Object.assign(creationItem.payload, {
-        serie: serie, patrimonio: patrimonio, capacidade: t.capacidade || 0,
-        marca: t.marca || "", ano_fabricacao: t.ano_fabricacao || null,
-        unidadeId: unidadeId, municipio: t.local.municipio,
-        latitude: t.local.latitude || null, longitude: t.local.longitude || null,
-        produtorNome: t.produtor ? (t.produtor.nome || "") : "",
-        produtorProp: t.produtor ? (t.produtor.propriedade || "") : ""
-      });
-      setQueue(pendingQ);
+    var er1 = await sb.from("tanques").update(sbPayload).eq("id", t.id);
+    var er2 = await sb.from("tanques").update(sbPayload).eq("id", sbPayload.id);
+    var er3 = await sb.from("tanques").update(sbPayload).eq("serie", serie);
+    if(editTankForm.serie && editTankForm.serie !== serie){
+      await sb.from("tanques").update(sbPayload).eq("serie", editTankForm.serie);
     }
-    saveCache();
-    saveSharedTanks(state.tanks);
-    notifyOtherTabs();
-    app.toast("📶 Tanque ainda não sincronizado. As alterações serão enviadas junto com o cadastro.");
-    app.openTank(t.id);
-    return;
+    var er4 = await sb.from("tanques").upsert([sbPayload], { onConflict: "id" });
+    editWriteErr = (er1 && er1.error) || (er2 && er2.error) || (er3 && er3.error) || (er4 && er4.error) || null;
+  }catch(e){
+    editWriteErr = e;
   }
 
-  t.pendente = true;
-  enqueueOp("editar_tanque", { tanqueId: t.id, patch: patch });
-
+  t.pendente = false;
   saveCache();
   saveSharedTanks(state.tanks);
   notifyOtherTabs();
+  await pullFromCloudMaster();
 
-  await processarFila();
-
-  if(pendingCount() > 0){
-    app.toast("📶 Sem conexão no momento. Salvo neste aparelho — será enviado automaticamente quando houver sinal.");
+  if(editWriteErr){
+    app.toast("⚠️ Salvo neste aparelho, mas falhou ao sincronizar: " + (editWriteErr.message || "tente novamente."));
   } else {
     app.toast("✅ Tanque atualizado e sincronizado!");
   }
