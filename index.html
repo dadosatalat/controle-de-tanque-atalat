@@ -813,6 +813,7 @@ var ROLE_PERMS = {
   operador: {criar:true,  editar:true,  excluir:true,  gerenciarUsuarios:false, transferir:true},
   consulta: {criar:false, editar:false, excluir:false, gerenciarUsuarios:false, transferir:false}
 };
+var UNIDADE_TODAS_ID = "00000000-0000-0000-0000-000000000000";
 
 var state = {
   session: null,
@@ -907,6 +908,7 @@ function getUnidadeUuid(unid){
 
 function unidadeNome(id){
   if(!id) return "Naque";
+  if(id === UNIDADE_TODAS_ID) return "Todas as unidades";
   var str = String(id).toLowerCase().trim();
   if(str.indexOf("9adeb73d") !== -1 || str === "naque" || str.indexOf("22222222") !== -1) return "Naque";
   if(str.indexOf("ab440a55") !== -1 || str === "matriz" || str.indexOf("11111111") !== -1) return "Matriz";
@@ -949,6 +951,14 @@ function fmtDate(d){
   return p[2]+"/"+p[1]+"/"+p[0];
 }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
+function fmtDateHora(h){
+  if(!h || !h.criadoEm) return fmtDate(h ? h.data : "");
+  var d = new Date(h.criadoEm);
+  if(isNaN(d.getTime())) return fmtDate(h.data);
+  var hora = String(d.getHours()).padStart(2, '0');
+  var min = String(d.getMinutes()).padStart(2, '0');
+  return fmtDate(h.data) + " às " + hora + ":" + min;
+}
 function nowFormatted(){
   var d = new Date();
   var dia = String(d.getDate()).padStart(2, '0');
@@ -1237,7 +1247,8 @@ async function pullFromCloudMaster(){
               produtor: h.produtor,
               litros: h.litros,
               desc: h.desc_texto || "",
-              fotos: h.fotos || []
+              fotos: h.fotos || [],
+              criadoEm: h.created_at || null
             };
           })
         };
@@ -2209,7 +2220,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.11";
+  var CURRENT_VERSION = "v2.0.12";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2507,9 +2518,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.11</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.12</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.11</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.12</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -2709,7 +2720,10 @@ function renderDetalhe(){
 
   html += '<div class="section-title">Histórico</div>';
   html += '<div class="timeline">';
-  var hist = t.historico.slice().sort(function(a,b){ return b.data.localeCompare(a.data); });
+  var hist = t.historico.slice().sort(function(a,b){
+    if(a.criadoEm && b.criadoEm) return b.criadoEm.localeCompare(a.criadoEm);
+    return b.data.localeCompare(a.data);
+  });
   if(hist.length===0){
     html += '<div class="empty">Nenhum registro ainda.</div>';
   } else {
@@ -2721,7 +2735,7 @@ function renderDetalhe(){
       }
       html += '<div class="tl-item"><div class="tl-dot"></div><div class="tl-body">'+
         '<div class="tl-head">'+
-          '<div><div class="tl-date">'+fmtDate(h.data)+'</div>'+
+          '<div><div class="tl-date">'+fmtDateHora(h)+'</div>'+
           '<div class="tl-type">'+esc(h.tipo)+pendingTagHtml(h.pendente)+'</div></div>'+
           (tlActions ? '<div class="tl-actions no-print">'+tlActions+'</div>' : '')+
         '</div>'+
@@ -2787,7 +2801,7 @@ app.confirmarTransferencia = async function(tankId){
   t.produtor = null;
   t.status = "estoque";
   if(!Array.isArray(t.historico)) t.historico = [];
-  t.historico.unshift({id: localId("hist"), data: dataHoje, tipo: "Transferência de unidade", produtor: "—", litros: litros, desc: desc, fotos: []});
+  t.historico.unshift({id: localId("hist"), data: dataHoje, tipo: "Transferência de unidade", produtor: "—", litros: litros, desc: desc, fotos: [], criadoEm: new Date().toISOString()});
   t.pendente = true;
   t.historico[0].pendente = true;
 
@@ -3111,7 +3125,8 @@ app.salvarVisita = async function(){
         produtor: novaForm.produtorNome || "—",
         litros: capacidade||0,
         desc: novaForm.desc || "(sem observações)",
-        fotos: Object.keys(novaForm.fotos||{}).map(function(k){return novaForm.fotos[k];}).filter(Boolean)
+        fotos: Object.keys(novaForm.fotos||{}).map(function(k){return novaForm.fotos[k];}).filter(Boolean),
+        criadoEm: new Date().toISOString()
       }]
     };
     state.tanks.unshift(novoTank);
@@ -3150,14 +3165,14 @@ app.salvarVisita = async function(){
     else if(novaForm.fotos && novaForm.fotos.abrigo && !tExist.foto) tExist.foto = novaForm.fotos.abrigo;
 
     if(!Array.isArray(tExist.historico)) tExist.historico = [];
-    tExist.historico.unshift({id: localId("hist"), data: novaForm.data, tipo: novaForm.tipo, produtor: isRetirada ? "—" : (novaForm.produtorNome||"—"), litros: capacidade||tExist.capacidade, desc: descTxt||"(sem observações)", fotos: fotosArr});
+    tExist.historico.unshift({id: localId("hist"), data: novaForm.data, tipo: novaForm.tipo, produtor: isRetirada ? "—" : (novaForm.produtorNome||"—"), litros: capacidade||tExist.capacidade, desc: descTxt||"(sem observações)", fotos: fotosArr, criadoEm: new Date().toISOString()});
 
     if(isRetirada && retiradaDestino === "outra_unidade" && novaUnidadeIdRetirada){
       var origemNome = unidadeNome(tExist.unidade_id);
       var destinoUnidadeNome = unidadeNome(novaUnidadeIdRetirada);
       tExist.unidade_id = novaUnidadeIdRetirada;
       var notaTransf = "Transferido da unidade "+origemNome+" para "+destinoUnidadeNome+" (via retirada).";
-      tExist.historico.unshift({id: localId("hist"), data: novaForm.data, tipo: "Transferência de unidade", produtor: "—", litros: tExist.capacidade, desc: notaTransf, fotos: []});
+      tExist.historico.unshift({id: localId("hist"), data: novaForm.data, tipo: "Transferência de unidade", produtor: "—", litros: tExist.capacidade, desc: notaTransf, fotos: [], criadoEm: new Date().toISOString()});
     }
   }
 
@@ -3563,6 +3578,17 @@ app.excluirRegistro = async function(tankId, hId){
 // ---------- RELATORIO ----------
 var relSelected = null;
 var relFilter = {tipo:"", de:"", ate:""};
+var relBusca = "";
+var relBuscaFocused = false;
+
+function refocusRelBusca(){
+  if(!relBuscaFocused) return;
+  var el = document.getElementById("relBuscaInput");
+  if(!el) return;
+  el.focus();
+  var len = el.value.length;
+  try{ el.setSelectionRange(len, len); }catch(e){}
+}
 
 app.exportarExcel = function(){
   if(!state.me || state.me.papel !== "admin"){
@@ -3675,19 +3701,28 @@ function renderRelatorio(){
     ? state.tanks.filter(function(t){ return t.unidade_id === state.me.unidade_id; })
     : state.tanks;
 
-  var opts = '<option value="">Selecione um tanque...</option>' +
-    relTanks.map(function(t){ return '<option value="'+t.id+'" '+(relSelected===t.id?'selected':'')+'>Série '+esc(t.serie)+' — '+(t.produtor?esc(t.produtor.nome):'sem produtor')+'</option>'; }).join('');
+  var relQ = (relBusca||"").toLowerCase().trim();
+  var relTanksFiltradas = !relQ ? relTanks : relTanks.filter(function(t){
+    var hay = [t.serie, t.patrimonio, t.produtor?t.produtor.nome:"", t.produtor?t.produtor.propriedade:""].join(" ").toLowerCase();
+    return hay.indexOf(relQ) !== -1;
+  });
 
-  html += '<div class="field no-print"><label>Tanque</label><select onchange="app.onRelSelect(this.value)">'+opts+'</select></div>';
+  html += '<div class="search-row search-box no-print" style="margin-bottom:10px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><input id="relBuscaInput" placeholder="Buscar por série, patrimônio, produtor..." value="'+esc(relBusca)+'" oninput="app.onRelBusca(this.value)" onfocus="relBuscaFocused=true" onblur="relBuscaFocused=false"/></div>';
+
+  var opts = '<option value="">Selecione um tanque...</option>' +
+    relTanksFiltradas.map(function(t){ return '<option value="'+t.id+'" '+(relSelected===t.id?'selected':'')+'>Série '+esc(t.serie)+' — '+(t.produtor?esc(t.produtor.nome):'sem produtor')+'</option>'; }).join('');
+
+  html += '<div class="field no-print"><label>Tanque'+(relQ ? ' ('+relTanksFiltradas.length+' encontrado(s))' : '')+'</label><select onchange="app.onRelSelect(this.value)">'+opts+'</select></div>';
 
   if(!relSelected){
     html += '<div class="empty no-print">Selecione um tanque acima para visualizar e imprimir seu relatório detalhado.</div>';
     document.getElementById("screen").innerHTML = html;
+    refocusRelBusca();
     return;
   }
 
   var t = findTank(relSelected);
-  if(!t){ document.getElementById("screen").innerHTML = html; return; }
+  if(!t){ document.getElementById("screen").innerHTML = html; refocusRelBusca(); return; }
 
   var tipoOpts = '<option value="">Todos os tipos</option>' +
     ["Cadastro","Instalação","Visita de rotina","Manutenção","Retirada","Transferência de unidade"].map(function(o){
@@ -3747,7 +3782,10 @@ function renderRelatorio(){
   }
 
   html += '<div class="section-title">Linha do tempo'+((relFilter.tipo||relFilter.de||relFilter.ate)?' (filtrada)':' completa')+'</div><div class="timeline">';
-  var hist = t.historico.slice().sort(function(a,b){ return b.data.localeCompare(a.data); });
+  var hist = t.historico.slice().sort(function(a,b){
+    if(a.criadoEm && b.criadoEm) return b.criadoEm.localeCompare(a.criadoEm);
+    return b.data.localeCompare(a.data);
+  });
   hist = hist.filter(function(h){
     if(relFilter.tipo && h.tipo !== relFilter.tipo) return false;
     if(relFilter.de && h.data < relFilter.de) return false;
@@ -3759,7 +3797,7 @@ function renderRelatorio(){
   } else {
     hist.forEach(function(h){
       html += '<div class="tl-item"><div class="tl-dot"></div><div class="tl-body">'+
-        '<div class="tl-date">'+fmtDate(h.data)+'</div>'+
+        '<div class="tl-date">'+fmtDateHora(h)+'</div>'+
         '<div class="tl-type">'+esc(h.tipo)+' — produtor: '+esc(h.produtor)+'</div>'+
         '<div class="tl-desc">'+esc(h.desc)+'</div>';
       if(h.fotos && h.fotos.length){
@@ -3771,8 +3809,10 @@ function renderRelatorio(){
   html += '</div>';
 
   document.getElementById("screen").innerHTML = html;
+  refocusRelBusca();
 }
 app.onRelSelect = function(id){ relSelected = id || null; relFilter = {tipo:"", de:"", ate:""}; renderRelatorio(); };
+app.onRelBusca = function(v){ relBusca = v; renderRelatorio(); };
 app.onRelFilter = function(field, value){ relFilter[field] = value; renderRelatorio(); };
 
 // ---------- CONFIGURACOES ----------
@@ -3806,7 +3846,7 @@ function renderConfig(){
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">'+
       '<div>'+
         '<div style="font-size:14px;font-weight:700;">'+(pend === 0 ? '✅ Todos os dados estão sincronizados' : '⚠️ '+pend+' registro(s) pendente(s) de envio')+'</div>'+
-        '<div style="font-size:11.5px;color:var(--muted);margin-top:2px;">Versão Instalada: <strong>v2.0.1</strong> · Banco Supabase Conectado</div>'+
+        '<div style="font-size:11.5px;color:var(--muted);margin-top:2px;">Versão Instalada: <strong>v2.0.12</strong> · Banco Supabase Conectado</div>'+
       '</div>'+
     '</div>'+
     '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
@@ -3924,8 +3964,9 @@ function renderUsuarioForm(){
   html += '<div class="field"><label>Unidade</label><select id="u_unidade">'+
     '<option value="">Sem unidade</option>'+
     state.unidades.map(function(u){ return '<option value="'+u.id+'" '+(userForm.unidadeId===u.id?'selected':'')+'>'+esc(u.nome)+'</option>'; }).join('')+
+    '<option value="'+UNIDADE_TODAS_ID+'" '+(userForm.unidadeId===UNIDADE_TODAS_ID?'selected':'')+'>Todas as unidades</option>'+
   '</select></div>';
-  html += '<div class="note">Administrador: acesso total, inclusive gerenciar usuários e ver todas as unidades.<br>Operador de campo: cria/edita tanques e visitas apenas da própria unidade, sem excluir.<br>Consulta: apenas visualização da própria unidade.</div>';
+  html += '<div class="note">Administrador: acesso total, inclusive gerenciar usuários e ver todas as unidades.<br>Operador de campo: cria/edita tanques e visitas apenas da própria unidade, sem excluir.<br>Consulta: apenas visualização da própria unidade.<br>Selecione "Todas as unidades" para liberar acesso a todas as unidades sem tornar o usuário administrador (necessário para transferências entre unidades).</div>';
 
   html += '<div class="section-title" style="margin-top:16px;">Segurança / Senha</div>';
   html += '<div class="field"><label>Nova senha</label><div class="password-input-wrap"><input id="u_novasenha" type="password" placeholder="Digite para redefinir a senha (mínimo 6 caracteres)"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'u_novasenha\', this)">👁️</button></div></div>';
