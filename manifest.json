@@ -4,7 +4,7 @@
   "description": "Sistema de gestão e controle de tanques de leite em comodato - Atalat",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#0b1118",
+  "background_color": "#ffffff",
   "theme_color": "#0f4f82",
   "orientation": "portrait-primary",
   "icons": [
