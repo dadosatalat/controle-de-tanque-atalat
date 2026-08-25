@@ -1725,6 +1725,51 @@ function photoSlot(fotos, key, label){
   return html;
 }
 
+function photoSlotEdit(fotos, key, label){
+  var src = (fotos && fotos[key]) ? fotos[key] : null;
+  var html = '<div class="photo-slot-box '+(src ? 'has-img' : '')+'">';
+  if(src){
+    html += '<img src="'+src+'" onclick="app.openPhotoModal(\''+src+'\')" style="cursor:pointer;" title="Clique para ampliar"/>';
+    html += '<div class="photo-slot-title">'+label+'</div>';
+    html += '<button type="button" class="btn btn-danger" style="margin-top:6px;padding:4px 8px;font-size:11px;width:100%;" onclick="app.removeEditTankPhoto(\''+key+'\')">🗑️ Remover foto</button>';
+  } else {
+    html += '<div class="photo-slot-title">+ '+label+'</div>';
+  }
+
+  html += '<div class="photo-btn-row">'+
+    '<label class="btn-photo-action camera-btn">'+
+      '📸 Tirar foto'+
+      '<input type="file" accept="image/*" capture="environment" onchange="app.onEditTankPhotoSlot(this,\''+key+'\')"/>'+
+    '</label>'+
+    '<label class="btn-photo-action gallery-btn">'+
+      '🖼️ Galeria'+
+      '<input type="file" accept="image/*" onchange="app.onEditTankPhotoSlot(this,\''+key+'\')"/>'+
+    '</label>'+
+  '</div></div>';
+
+  return html;
+}
+
+app.onEditTankPhotoSlot = async function(input, key){
+  var file = input.files && input.files[0];
+  if(!file || !editTankForm) return;
+  try{
+    var dataUrl = await resizeImageFile(file, 1280, 0.72);
+    if(!editTankForm.fotos) editTankForm.fotos = {};
+    editTankForm.fotos[key] = dataUrl;
+    renderEditarTanque();
+  }catch(e){
+    app.toast("Não foi possível processar a foto.");
+  }
+};
+
+app.removeEditTankPhoto = function(key){
+  if(editTankForm && editTankForm.fotos){
+    editTankForm.fotos[key] = null;
+    renderEditarTanque();
+  }
+};
+
 app.syncFormInputs = function(){
   var fData = document.getElementById("f_data"); if(fData) novaForm.data = fData.value;
   var fNome = document.getElementById("f_prodnome"); if(fNome) novaForm.produtorNome = fNome.value.trim();
@@ -2678,6 +2723,7 @@ function renderDetalhe(){
     '<div class="l">Produtor atual / Contrato</div>'+
     '<div class="v" style="font-size:13.5px;">'+prod+'</div>'+
     '<div class="note" style="margin-top:4px;font-size:12px;">Contrato de comodato: '+contratoStr+'</div>'+
+    (t.produtor && hasPerm("editar") ? '<button class="btn btn-ghost no-print" style="margin-top:8px;padding:6px 10px;font-size:12px;background:rgba(2,132,199,0.1);color:#0284c7;border:1px solid rgba(2,132,199,0.3);border-radius:6px;font-weight:600;display:inline-flex;align-items:center;gap:4px;" onclick="app.editarTanque(\''+t.id+'\')">✏️ Editar Produtor / Contrato</button>' : '')+
   '</div>';
   if(!t.produtor && hasPerm("criar")){
     html += '<button class="btn btn-primary no-print" style="margin-bottom:12px;" onclick="app.vincularProdutor(\''+t.id+'\')">Vincular produtor</button>';
@@ -3241,10 +3287,17 @@ app.editarTanque = function(id){
     produtorNome: t.produtor ? (t.produtor.nome || "") : "",
     produtorProp: t.produtor ? (t.produtor.propriedade || "") : "",
     contratoAssinado: t.contrato_assinado ? "sim" : "nao",
-    municipio: t.local.municipio || "Naque - MG",
-    latitude: t.local.latitude || "",
-    longitude: t.local.longitude || "",
-    foto: t.foto || null, novaFoto: null
+    municipio: (t.local && t.local.municipio) ? t.local.municipio : "Naque - MG",
+    latitude: (t.local && t.local.latitude) ? t.local.latitude : "",
+    longitude: (t.local && t.local.longitude) ? t.local.longitude : "",
+    foto: t.foto || null,
+    fotos: {
+      geral: t.foto || null,
+      plaqueta: null,
+      abrigo: null,
+      contrato: null
+    },
+    desvincular: false
   };
   app.goto("editarTanque", id);
 };
@@ -3276,6 +3329,10 @@ function renderEditarTanque(){
     '<option value="nao" '+(editTankForm.contratoAssinado==="nao"?'selected':'')+'>Não (Pendente)</option>'+
     '<option value="sim" '+(editTankForm.contratoAssinado==="sim"?'selected':'')+'>Sim (Assinado)</option>'+
   '</select></div>';
+  if(editTankForm.produtorNome && hasPerm("editar")){
+    html += '<button type="button" class="btn btn-ghost no-print" style="margin-bottom:14px;padding:8px 12px;font-size:12px;color:var(--warn);border:1px solid var(--warn);background:transparent;" onclick="app.desvincularProdutorEdit()">❌ Desvincular Produtor (Devolver ao Estoque)</button>';
+  }
+
   html += '<div class="field"><label>Município</label><input id="e_municipio" value="'+esc(editTankForm.municipio)+'"/></div>';
   html += '<div class="loc-row">'+
     '<div class="field"><label>Latitude</label><input id="e_lat" type="number" step="any" value="'+esc(String(editTankForm.latitude||""))+'"/></div>'+
@@ -3283,25 +3340,11 @@ function renderEditarTanque(){
   '</div>';
   html += '<button type="button" class="btn btn-loc no-print" onclick="app.usarLocalizacao(\'e_lat\',\'e_lng\')">Usar minha localização atual (GPS)</button>';
 
-  html += '<div class="section-title">Foto do tanque</div>';
-  var srcFoto = editTankForm.novaFoto || editTankForm.foto;
-  html += '<div class="photo-slot-box '+(srcFoto ? 'has-img' : '')+'">';
-  if(srcFoto){
-    html += '<img src="'+srcFoto+'" onclick="app.openPhotoModal(\''+srcFoto+'\')" style="cursor:pointer;" title="Clique para ampliar"/>';
-    html += '<div class="photo-slot-title">Foto do tanque</div>';
-  } else {
-    html += '<div class="photo-slot-title">+ Foto do tanque</div>';
-  }
-  html += '<div class="photo-btn-row">'+
-    '<label class="btn-photo-action camera-btn">'+
-      '📸 Tirar foto'+
-      '<input type="file" accept="image/*" capture="environment" onchange="app.onEditTankPhoto(this)"/>'+
-    '</label>'+
-    '<label class="btn-photo-action gallery-btn">'+
-      '🖼️ Galeria'+
-      '<input type="file" accept="image/*" onchange="app.onEditTankPhoto(this)"/>'+
-    '</label>'+
-  '</div></div>';
+  html += '<div class="section-title">Fotos do tanque & documentação</div>';
+  html += photoSlotEdit(editTankForm.fotos, 'geral', 'Foto Geral / Capa do Tanque');
+  html += photoSlotEdit(editTankForm.fotos, 'plaqueta', 'Foto da Plaqueta de Identificação');
+  html += photoSlotEdit(editTankForm.fotos, 'abrigo', 'Foto do Abrigo / Local de Instalação');
+  html += photoSlotEdit(editTankForm.fotos, 'contrato', 'Foto do Contrato de Comodato');
 
   html += '<div class="row-btns" style="margin-top:18px;">'+
     '<button class="btn" onclick="app.openTank(\''+t.id+'\')">Cancelar</button>'+
@@ -3310,6 +3353,20 @@ function renderEditarTanque(){
 
   document.getElementById("screen").innerHTML = html;
 }
+
+app.desvincularProdutorEdit = function(){
+  if(!editTankForm) return;
+  editTankForm.produtorNome = "";
+  editTankForm.produtorProp = "";
+  editTankForm.produtorMatricula = "";
+  editTankForm.contratoAssinado = "nao";
+  editTankForm.desvincular = true;
+  var elNome = document.getElementById("e_prodnome"); if(elNome) elNome.value = "";
+  var elProp = document.getElementById("e_prodprop"); if(elProp) elProp.value = "";
+  var elMat = document.getElementById("e_prodmatricula"); if(elMat) elMat.value = "";
+  var elCont = document.getElementById("e_contrato_assinado"); if(elCont) elCont.value = "nao";
+  app.toast("Produtor desvinculado! Clique em Salvar para confirmar.");
+};
 
 app.onEditTankPhoto = async function(input){
   var file = input.files && input.files[0];
@@ -3371,17 +3428,29 @@ app.salvarEdicaoTanque = async function(){
   t.marca = marca !== "" ? marca : (t.marca || "");
   t.ano_fabricacao = anoFab !== null ? anoFab : (t.ano_fabricacao || null);
 
-  if(prodNome !== ""){
+  if(editTankForm.desvincular){
+    t.produtor = null;
+    t.contrato_assinado = false;
+    if(status === "em_operacao") t.status = "estoque";
+  } else if(prodNome !== ""){
     t.produtor = { nome: prodNome, propriedade: prodProp, matricula: prodMatricula };
-  } else if(t.produtor && prodProp !== ""){
-    t.produtor.propriedade = prodProp;
+    t.contrato_assinado = contratoAssinado;
+    if(status === "estoque") t.status = "em_operacao";
+  } else {
+    t.produtor = null;
+    t.contrato_assinado = false;
+    if(status === "em_operacao") t.status = "estoque";
+  }
+
+  if(editTankForm.fotos){
+    var cap = editTankForm.fotos.geral || editTankForm.fotos.abrigo || editTankForm.fotos.plaqueta;
+    if(cap) t.foto = cap;
   }
 
   if(!t.local) t.local = {};
   t.local.municipio = municipio || t.local.municipio || "Naque - MG";
   t.local.latitude = latitude || t.local.latitude || null;
   t.local.longitude = longitude || t.local.longitude || null;
-  t.contrato_assinado = contratoAssinado;
 
   saveCache();
   saveSharedTanks(state.tanks);
@@ -3393,14 +3462,17 @@ app.salvarEdicaoTanque = async function(){
 
   // 2. NON-BLOCKING BACKGROUND SYNC TO CLOUD
   (async function(){
-    if(editTankForm.novaFoto){
-      try{
-        var pubUrl = await uploadFotoParaStorage(editTankForm.novaFoto, t.unidade_id, t.id, "capa");
-        t.foto = pubUrl;
-        saveCache();
-        saveSharedTanks(state.tanks);
-      }catch(fotoErr){
-        t.foto = editTankForm.novaFoto;
+    if(editTankForm.fotos){
+      var newFotosList = Object.keys(editTankForm.fotos).map(function(k){ return editTankForm.fotos[k]; }).filter(Boolean);
+      if(newFotosList.length > 0 && newFotosList[0].startsWith("data:image")){
+        try{
+          var pubUrl = await uploadFotoParaStorage(newFotosList[0], t.unidade_id, t.id, "capa");
+          t.foto = pubUrl;
+          saveCache();
+          saveSharedTanks(state.tanks);
+        }catch(fotoErr){
+          t.foto = newFotosList[0];
+        }
       }
     }
 
@@ -3409,7 +3481,7 @@ app.salvarEdicaoTanque = async function(){
         serie: serie,
         patrimonio: patrimonio,
         capacidade: t.capacidade || 0,
-        status: status,
+        status: t.status,
         marca: t.marca || null,
         ano_fabricacao: t.ano_fabricacao || null,
         produtor_nome: t.produtor ? (t.produtor.nome || null) : null,
