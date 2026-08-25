@@ -1976,6 +1976,7 @@ window.addEventListener("offline", function(){
 });
 var lastStateSnapshotStr = "";
 setInterval(function(){
+  if(document.visibilityState !== "visible") return;
   pullFromCloudMaster().then(function(){
     var currentSnap = JSON.stringify((state.tanks||[]).map(function(t){ return t.id + "_" + (t.status||"") + "_" + (t.historico?t.historico.length:0); }));
     if(currentSnap !== lastStateSnapshotStr){
@@ -1985,7 +1986,7 @@ setInterval(function(){
       }
     }
   });
-}, 10000);
+}, 30000);
 
 window.addEventListener("visibilitychange", function(){
   if(document.visibilityState === "visible"){
@@ -2220,7 +2221,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.12";
+  var CURRENT_VERSION = "v10.2.0";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2518,9 +2519,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.12</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v10.2.0</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.12</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v10.2.0</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3846,10 +3847,16 @@ function renderConfig(){
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">'+
       '<div>'+
         '<div style="font-size:14px;font-weight:700;">'+(pend === 0 ? '✅ Todos os dados estão sincronizados' : '⚠️ '+pend+' registro(s) pendente(s) de envio')+'</div>'+
-        '<div style="font-size:11.5px;color:var(--muted);margin-top:2px;">Versão Instalada: <strong>v2.0.12</strong> · Banco Supabase Conectado</div>'+
       '</div>'+
-    '</div>'+
-    '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
+    '</div>';
+  html += '<div class="section-title">Versão do Aplicativo</div>';
+  html += '<div class="current-user-card" style="margin-bottom:18px;">'+
+    '<div class="l">Versão Instalada</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v10.2.0</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 25/08/2026 (Economia Inteligente de Tráfego Supabase - Otimização de Egress).</div>'+
+    '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
+  '</div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
       '<button class="btn btn-primary" style="padding:8px 12px;font-size:12px;" onclick="app.forcarSincronizacao()">'+(sincronizando ? 'Sincronizando...' : '🔄 Sincronizar Agora')+'</button>'+
       '<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarRecarregarDados()">📥 Recarregar da Nuvem</button>'+
       '<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🧹 Limpar Cache &amp; Reinstalar</button>'+
