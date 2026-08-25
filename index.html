@@ -1672,30 +1672,143 @@ app.togglePasswordVisibility = function(inputId, btnEl){
   }
 };
 
-app.openPhotoModal = function(src){
+function getTankPhotos(t){
+  if(!t) return [];
+  var set = [];
+  function add(f){
+    if(f && typeof f === "string" && f.length > 5 && set.indexOf(f) === -1){
+      set.push(f);
+    }
+  }
+  add(t.foto);
+  if(Array.isArray(t.historico)){
+    t.historico.forEach(function(h){
+      if(Array.isArray(h.fotos)){
+        h.fotos.forEach(add);
+      }
+    });
+  }
+  return set;
+}
+
+app.openPhotoModal = function(src, photosList, startIdx){
   var existing = document.querySelector(".photo-modal-wrap");
   if(existing) existing.remove();
 
+  var list = [];
+  if(Array.isArray(photosList) && photosList.length > 0){
+    list = photosList;
+  } else if(state.selected){
+    var currentTank = findTank(state.selected);
+    list = getTankPhotos(currentTank);
+  }
+  if(!list || list.length === 0){
+    list = [src];
+  }
+
+  var currentIndex = (typeof startIdx === "number" && startIdx >= 0 && startIdx < list.length) 
+                     ? startIdx 
+                     : list.indexOf(src);
+  if(currentIndex < 0) currentIndex = 0;
+
   var modal = document.createElement("div");
   modal.className = "photo-modal-wrap no-print";
-  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;";
-  
-  var filename = "foto_atalat_" + Date.now() + ".jpg";
-  var inner = '<div style="position:relative;max-width:100%;max-height:85vh;display:flex;flex-direction:column;align-items:center;">'+
-    '<img src="'+src+'" style="max-width:100%;max-height:72vh;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,0.6);object-fit:contain;"/>'+
-    '<div style="margin-top:16px;display:flex;gap:12px;align-items:center;" onclick="event.stopPropagation()">'+
-      '<a href="'+src+'" download="'+filename+'" target="_blank" class="btn btn-primary" style="padding:10px 20px;font-size:13.5px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:6px;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,0.4);">'+
-        '📥 Baixar Foto / Documento'+
-      '</a>'+
-      '<button type="button" class="btn" style="padding:10px 18px;font-size:13.5px;background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:10px;cursor:pointer;" onclick="document.querySelector(\'.photo-modal-wrap\').remove()">'+
-        '✕ Fechar'+
-      '</button>'+
-    '</div>'+
-  '</div>';
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.94);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;user-select:none;";
 
-  modal.innerHTML = inner;
+  function updateModalContent(){
+    var activeSrc = list[currentIndex] || src;
+    var filename = "foto_atalat_" + (currentIndex + 1) + "_" + Date.now() + ".jpg";
+    var total = list.length;
+
+    var navPrevHtml = total > 1 ? '<button type="button" class="photo-nav-btn prev-btn" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.65);color:#fff;border:1px solid rgba(255,255,255,0.3);width:44px;height:44px;border-radius:50%;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10;" onclick="event.stopPropagation();app.navigatePhotoModal(-1)">◀</button>' : '';
+    var navNextHtml = total > 1 ? '<button type="button" class="photo-nav-btn next-btn" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.65);color:#fff;border:1px solid rgba(255,255,255,0.3);width:44px;height:44px;border-radius:50%;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10;" onclick="event.stopPropagation();app.navigatePhotoModal(1)">▶</button>' : '';
+    var counterHtml = total > 1 ? '<div style="color:rgba(255,255,255,0.85);font-size:13px;font-weight:600;margin-bottom:8px;background:rgba(255,255,255,0.15);padding:3px 10px;border-radius:12px;">Foto '+(currentIndex + 1)+' de '+total+' (Deslize para o lado ◄ ►)</div>' : '';
+
+    var thumbsHtml = '';
+    if(total > 1){
+      thumbsHtml = '<div style="display:flex;gap:6px;margin-top:12px;max-width:90vw;overflow-x:auto;padding-bottom:4px;" onclick="event.stopPropagation()">'+
+        list.map(function(itemSrc, idx){
+          var isSel = idx === currentIndex;
+          return '<img src="'+itemSrc+'" style="width:48px;height:48px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid '+(isSel?'#0284c7':'transparent')+';opacity:'+(isSel?'1':'0.5')+';" onclick="app.setPhotoModalIndex('+idx+')"/>';
+        }).join('')+
+      '</div>';
+    }
+
+    var inner = '<div style="position:relative;width:100%;max-width:900px;max-height:90vh;display:flex;flex-direction:column;align-items:center;justify-content:center;">'+
+      counterHtml +
+      '<div style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;">'+
+        navPrevHtml +
+        '<img id="modalActiveImg" src="'+activeSrc+'" style="max-width:100%;max-height:68vh;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,0.6);object-fit:contain;transition:transform 0.15s ease-out;"/>'+
+        navNextHtml +
+      '</div>'+
+      thumbsHtml +
+      '<div style="margin-top:14px;display:flex;gap:12px;align-items:center;" onclick="event.stopPropagation()">'+
+        '<a href="'+activeSrc+'" download="'+filename+'" target="_blank" class="btn btn-primary" style="padding:10px 20px;font-size:13.5px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:6px;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,0.4);">'+
+          '📥 Baixar Foto / Documento'+
+        '</a>'+
+        '<button type="button" class="btn" style="padding:10px 18px;font-size:13.5px;background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:10px;cursor:pointer;" onclick="app.closePhotoModal()">'+
+          '✕ Fechar'+
+        '</button>'+
+      '</div>'+
+    '</div>';
+
+    modal.innerHTML = inner;
+  }
+
+  app.photoModalState = {
+    list: list,
+    currentIndex: currentIndex,
+    update: updateModalContent
+  };
+
+  app.navigatePhotoModal = function(dir){
+    if(!app.photoModalState) return;
+    var len = app.photoModalState.list.length;
+    if(len <= 1) return;
+    app.photoModalState.currentIndex = (app.photoModalState.currentIndex + dir + len) % len;
+    currentIndex = app.photoModalState.currentIndex;
+    app.photoModalState.update();
+  };
+
+  app.setPhotoModalIndex = function(idx){
+    if(!app.photoModalState) return;
+    app.photoModalState.currentIndex = idx;
+    currentIndex = idx;
+    app.photoModalState.update();
+  };
+
+  app.closePhotoModal = function(){
+    var wrap = document.querySelector(".photo-modal-wrap");
+    if(wrap) wrap.remove();
+    if(app.photoModalKeyHandler){
+      document.removeEventListener("keydown", app.photoModalKeyHandler);
+    }
+  };
+
+  // Keyboard navigation (← / → / Esc)
+  app.photoModalKeyHandler = function(e){
+    if(e.key === "ArrowLeft"){ app.navigatePhotoModal(-1); }
+    else if(e.key === "ArrowRight"){ app.navigatePhotoModal(1); }
+    else if(e.key === "Escape"){ app.closePhotoModal(); }
+  };
+  document.addEventListener("keydown", app.photoModalKeyHandler);
+
+  // Touch Swipe Support
+  var touchStartX = 0;
+  modal.ontouchstart = function(e){
+    if(e.touches && e.touches[0]){ touchStartX = e.touches[0].clientX; }
+  };
+  modal.ontouchend = function(e){
+    if(e.changedTouches && e.changedTouches[0]){
+      var deltaX = e.changedTouches[0].clientX - touchStartX;
+      if(deltaX > 40){ app.navigatePhotoModal(-1); }
+      else if(deltaX < -40){ app.navigatePhotoModal(1); }
+    }
+  };
+
+  updateModalContent();
   modal.onclick = function(e){
-    if(e.target === modal) modal.remove();
+    if(e.target === modal) app.closePhotoModal();
   };
   document.body.appendChild(modal);
 };
