@@ -1,8 +1,11 @@
-const CACHE_NAME = 'atalat-tanques-v2.0.18';
+const CACHE_NAME = 'atalat-tanques-v2.0.19';
 const ASSETS = [
   './',
   './index.html',
   './logo-atalat.png',
+  './favicon.png',
+  './favicon-32x32.png',
+  './favicon-16x16.png',
   './icon-192.png',
   './icon-512.png',
   './manifest.json'
