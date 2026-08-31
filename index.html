@@ -3570,9 +3570,26 @@ app.salvarEdicaoTanque = async function(){
     if(status === "em_operacao") t.status = "estoque";
   }
 
+  var editFotosList = [];
   if(editTankForm.fotos){
-    var cap = editTankForm.fotos.geral || editTankForm.fotos.abrigo || editTankForm.fotos.plaqueta;
+    editFotosList = Object.keys(editTankForm.fotos).map(function(k){ return editTankForm.fotos[k]; }).filter(Boolean);
+    var cap = editTankForm.fotos.geral || editTankForm.fotos.abrigo || editTankForm.fotos.plaqueta || editFotosList[0];
     if(cap) t.foto = cap;
+
+    if(editFotosList.length > 0){
+      if(!Array.isArray(t.historico)) t.historico = [];
+      var newHistId = localId("hist");
+      t.historico.unshift({
+        id: newHistId,
+        data: todayISO(),
+        tipo: "Atualização de Fotos",
+        produtor: t.produtor ? (t.produtor.nome || "—") : "—",
+        litros: t.capacidade || 0,
+        desc: "Fotos e documentação atualizadas na edição do tanque",
+        fotos: editFotosList,
+        criadoEm: new Date().toISOString()
+      });
+    }
   }
 
   if(!t.local) t.local = {};
@@ -3585,23 +3602,34 @@ app.salvarEdicaoTanque = async function(){
   notifyOtherTabs();
 
   // Instant screen transition (<20ms)
-  app.toast("✅ Alterações salvas instantaneamente!");
+  app.toast("✅ Alterações e fotos salvas instantaneamente!");
   app.openTank(t.id);
 
   // 2. NON-BLOCKING BACKGROUND SYNC TO CLOUD
   (async function(){
-    if(editTankForm.fotos){
-      var newFotosList = Object.keys(editTankForm.fotos).map(function(k){ return editTankForm.fotos[k]; }).filter(Boolean);
-      if(newFotosList.length > 0 && newFotosList[0].startsWith("data:image")){
-        try{
-          var pubUrl = await uploadFotoParaStorage(newFotosList[0], t.unidade_id, t.id, "capa");
-          t.foto = pubUrl;
+    if(editFotosList.length > 0){
+      try{
+        var uploadedUrls = [];
+        for(var fi=0; fi<editFotosList.length; fi++){
+          var srcF = editFotosList[fi];
+          if(srcF && srcF.startsWith("data:image")){
+            try{
+              var pUrl = await uploadFotoParaStorage(srcF, t.unidade_id, t.id, "edit_"+fi);
+              uploadedUrls.push(pUrl);
+            }catch(upE){ uploadedUrls.push(srcF); }
+          } else if(srcF){
+            uploadedUrls.push(srcF);
+          }
+        }
+        if(uploadedUrls.length > 0){
+          t.foto = uploadedUrls[0];
+          if(t.historico && t.historico[0] && t.historico[0].tipo === "Atualização de Fotos"){
+            t.historico[0].fotos = uploadedUrls;
+          }
           saveCache();
           saveSharedTanks(state.tanks);
-        }catch(fotoErr){
-          t.foto = newFotosList[0];
         }
-      }
+      }catch(fotoErr){}
     }
 
     try{
@@ -3625,6 +3653,18 @@ app.salvarEdicaoTanque = async function(){
       await sb.from("tanques").update(sbPayload).eq("serie", serie);
       if(oldSerie && oldSerie !== serie){
         await sb.from("tanques").update(sbPayload).eq("serie", oldSerie);
+      }
+      if(editFotosList.length > 0 && t.historico && t.historico[0]){
+        var hEntry = t.historico[0];
+        await sb.from("historico").insert({
+          tanque_id: t.id,
+          data: hEntry.data,
+          tipo: hEntry.tipo,
+          produtor: hEntry.produtor,
+          litros: hEntry.litros,
+          desc_texto: hEntry.desc,
+          fotos: hEntry.fotos || []
+        });
       }
     }catch(e){}
   })();
