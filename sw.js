@@ -1,4 +1,4 @@
-const CACHE_NAME = 'atalat-tanques-v2.0.21';
+const CACHE_NAME = 'atalat-tanques-v2.0.22';
 const ASSETS = [
   './',
   './index.html',
@@ -29,7 +29,7 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: 'no-cache' })
       .then((response) => {
         if (response && response.status === 200) {
           const copy = response.clone();
