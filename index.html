@@ -1816,11 +1816,12 @@ app.openPhotoModal = function(src, photosList, startIdx){
 };
 
 function photoSlot(fotos, key, label){
-  var src = fotos[key];
+  var src = (fotos && fotos[key]) ? fotos[key] : null;
   var html = '<div class="photo-slot-box '+(src ? 'has-img' : '')+'">';
   if(src){
     html += '<img src="'+src+'" onclick="app.openPhotoModal(\''+src+'\')" style="cursor:pointer;" title="Clique para ampliar"/>';
     html += '<div class="photo-slot-title">'+label+'</div>';
+    html += '<button type="button" class="btn btn-danger" style="margin-top:6px;margin-bottom:8px;padding:4px 8px;font-size:11.1px;width:100%;" onclick="app.removePhoto(\''+key+'\')">🗑️ Remover foto</button>';
   } else {
     html += '<div class="photo-slot-title">+ '+label+'</div>';
   }
@@ -1897,11 +1898,19 @@ app.syncFormInputs = function(){
   var fContr = document.getElementById("f_contrato_assinado"); if(fContr) novaForm.contratoAssinado = fContr.value;
 };
 
+app.removePhoto = function(key){
+  if(novaForm && novaForm.fotos){
+    novaForm.fotos[key] = null;
+    renderNova();
+  }
+};
+
 app.onPhoto = async function(input, key){
   var file = input.files && input.files[0];
   if(!file) return;
 
   app.syncFormInputs();
+  if(!novaForm.fotos) novaForm.fotos = {};
 
   try {
     var instantUrl = URL.createObjectURL(file);
@@ -2381,7 +2390,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.19";
+  var CURRENT_VERSION = "v2.0.20";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2665,9 +2674,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.19</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.20</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.19</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.20</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3096,14 +3105,10 @@ function renderNova(){
   }
 
   html += '<div class="section-title">Fotos</div>';
-  if(!isNovo){
-    html += photoSlot(novaForm.fotos, 'abrigo', 'Foto do abrigo / local de instalação');
-  }
-  html += photoSlot(novaForm.fotos, 'plaqueta', 'Foto da plaqueta / número de série');
   html += photoSlot(novaForm.fotos, 'geral', 'Foto geral do tanque');
-  if(!isNovo && (novaForm.tipo === "Instalação" || novaForm.contratoAssinado === "sim")){
-    html += photoSlot(novaForm.fotos, 'contrato', 'Foto do contrato de comodato assinado');
-  }
+  html += photoSlot(novaForm.fotos, 'plaqueta', 'Foto da plaqueta / número de série');
+  html += photoSlot(novaForm.fotos, 'abrigo', 'Foto do abrigo / local de instalação');
+  html += photoSlot(novaForm.fotos, 'contrato', 'Foto do contrato de comodato assinado');
 
   html += '<div class="section-title">Observações</div>';
   html += '<div class="field"><textarea id="f_desc" oninput="app.syncField(\'desc\',this.value)" placeholder="Estado do tanque, ocorrências, pendências...">'+esc(novaForm.desc)+'</textarea></div>';
