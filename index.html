@@ -2847,6 +2847,31 @@ function renderDetalhe(){
     html += '<div class="banner-warn">Este tanque ainda não foi sincronizado com o servidor. '+pendingTagHtml(true)+'</div>';
   }
   html += '<div class="cover-photo">'+cover+'</div>';
+
+  var allTankPhotos = [];
+  if(t.foto && typeof t.foto === "string" && t.foto.indexOf("logo-atalat") === -1 && t.foto.trim().length > 0){
+    allTankPhotos.push(t.foto);
+  }
+  if(Array.isArray(t.historico)){
+    t.historico.forEach(function(h){
+      if(Array.isArray(h.fotos)){
+        h.fotos.forEach(function(f){
+          if(f && typeof f === "string" && f.indexOf("logo-atalat") === -1 && f.trim().length > 0 && allTankPhotos.indexOf(f) === -1){
+            allTankPhotos.push(f);
+          }
+        });
+      }
+    });
+  }
+
+  if(allTankPhotos.length > 1){
+    html += '<div class="info-box" style="margin-bottom:12px;">'+
+      '<div class="l">Todas as Fotos do Tanque ('+allTankPhotos.length+')</div>'+
+      '<div class="tl-photos" style="margin-top:8px;display:flex;gap:8px;overflow-x:auto;">'+
+        allTankPhotos.map(function(f){ return '<img src="'+f+'" onclick="app.openPhotoModal(\''+f+'\')" style="width:68px;height:68px;object-fit:cover;border-radius:8px;cursor:pointer;border:1.5px solid var(--border);flex-shrink:0;"/>'; }).join('')+
+      '</div>'+
+    '</div>';
+  }
   html += '<div class="info-grid">'+
     '<div class="info-box"><div class="l">Capacidade</div><div class="v">'+t.capacidade.toLocaleString('pt-BR')+' L</div></div>'+
     '<div class="info-box"><div class="l">Status</div><div class="v">'+STATUS_LABEL(t.status)+'</div></div>'+
@@ -2897,8 +2922,11 @@ function renderDetalhe(){
           (tlActions ? '<div class="tl-actions no-print">'+tlActions+'</div>' : '')+
         '</div>'+
         '<div class="tl-desc">'+esc(h.desc)+'</div>';
-      if(h.fotos && h.fotos.length){
-        html += '<div class="tl-photos">'+h.fotos.map(function(f){return '<img src="'+f+'" onclick="app.openPhotoModal(\''+f+'\')"/>';}).join('')+'</div>';
+      var validHFotos = (h.fotos || []).filter(function(f){
+        return f && typeof f === "string" && f.trim().length > 0 && f.indexOf("logo-atalat") === -1;
+      });
+      if(validHFotos.length){
+        html += '<div class="tl-photos">'+validHFotos.map(function(f){return '<img src="'+f+'" onclick="app.openPhotoModal(\''+f+'\')"/>';}).join('')+'</div>';
       }
       html += '</div></div>';
     });
@@ -3407,6 +3435,25 @@ app.editarTanque = function(id){
   var t = findTank(id);
   if(!t) return;
   if(!t.local) t.local = {};
+
+  var existingFotos = { geral: t.foto || null, plaqueta: null, abrigo: null, contrato: null };
+  if(Array.isArray(t.historico)){
+    for(var hi=0; hi<t.historico.length; hi++){
+      var h = t.historico[hi];
+      if(h && Array.isArray(h.fotos)){
+        for(var fi=0; fi<h.fotos.length; fi++){
+          var fUrl = h.fotos[fi];
+          if(fUrl && typeof fUrl === "string" && fUrl.indexOf("logo-atalat") === -1 && fUrl.trim().length > 0){
+            if(!existingFotos.geral) existingFotos.geral = fUrl;
+            else if(!existingFotos.plaqueta) existingFotos.plaqueta = fUrl;
+            else if(!existingFotos.abrigo) existingFotos.abrigo = fUrl;
+            else if(!existingFotos.contrato) existingFotos.contrato = fUrl;
+          }
+        }
+      }
+    }
+  }
+
   editTankForm = {
     id: t.id, serie: t.serie, patrimonio: t.patrimonio, capacidade: t.capacidade,
     marca: t.marca || "", ano_fabricacao: t.ano_fabricacao || "", status: t.status,
@@ -3419,12 +3466,7 @@ app.editarTanque = function(id){
     latitude: (t.local && t.local.latitude) ? t.local.latitude : "",
     longitude: (t.local && t.local.longitude) ? t.local.longitude : "",
     foto: t.foto || null,
-    fotos: {
-      geral: t.foto || null,
-      plaqueta: null,
-      abrigo: null,
-      contrato: null
-    },
+    fotos: existingFotos,
     desvincular: false
   };
   app.goto("editarTanque", id);
@@ -3572,7 +3614,9 @@ app.salvarEdicaoTanque = async function(){
 
   var editFotosList = [];
   if(editTankForm.fotos){
-    editFotosList = Object.keys(editTankForm.fotos).map(function(k){ return editTankForm.fotos[k]; }).filter(Boolean);
+    editFotosList = Object.keys(editTankForm.fotos)
+      .map(function(k){ return editTankForm.fotos[k]; })
+      .filter(function(url){ return url && typeof url === "string" && url.trim().length > 0 && url.indexOf("logo-atalat") === -1; });
     var cap = editTankForm.fotos.geral || editTankForm.fotos.abrigo || editTankForm.fotos.plaqueta || editFotosList[0];
     if(cap) t.foto = cap;
 
