@@ -1220,6 +1220,35 @@ async function pullFromCloudMaster(){
           return l.id === row.id || (l.serie && l.serie === row.serie);
         });
 
+        var cloudFoto = (row.foto && typeof row.foto === "string" && row.foto.trim().length > 0 && row.foto.indexOf("logo-atalat") === -1) ? row.foto : null;
+        var localFoto = (existingLocal && existingLocal.foto && typeof existingLocal.foto === "string" && existingLocal.foto.trim().length > 0) ? existingLocal.foto : null;
+        var finalFoto = cloudFoto || localFoto;
+
+        var cloudHistItems = tankHist.map(function(h){
+          return {
+            id: h.id,
+            data: h.data,
+            tipo: h.tipo,
+            produtor: h.produtor,
+            litros: h.litros,
+            desc: h.desc_texto || "",
+            fotos: h.fotos || [],
+            criadoEm: h.created_at || null
+          };
+        });
+
+        var mergedHist = cloudHistItems.slice();
+        if(existingLocal && Array.isArray(existingLocal.historico)){
+          existingLocal.historico.forEach(function(lh){
+            if(lh){
+              var existsInCloud = mergedHist.some(function(ch){ return ch.id === lh.id || (ch.tipo === lh.tipo && ch.data === lh.data && ch.desc === lh.desc); });
+              if(!existsInCloud){
+                mergedHist.unshift(lh);
+              }
+            }
+          });
+        }
+
         return {
           id: row.id,
           serie: row.serie || "",
@@ -1228,7 +1257,7 @@ async function pullFromCloudMaster(){
           status: row.status || "estoque",
           marca: (existingLocal && existingLocal.marca) ? existingLocal.marca : (row.marca || ""),
           ano_fabricacao: (existingLocal && existingLocal.ano_fabricacao) ? existingLocal.ano_fabricacao : (row.ano_fabricacao || null),
-          foto: row.foto || (existingLocal ? existingLocal.foto : null),
+          foto: finalFoto,
           contrato_assinado: (existingLocal && existingLocal.contrato_assinado !== undefined) ? existingLocal.contrato_assinado : (row.contrato_assinado === true || row.contrato_assinado === "sim"),
           produtor: row.produtor_nome ? {
             nome: row.produtor_nome,
@@ -1241,18 +1270,7 @@ async function pullFromCloudMaster(){
             latitude: row.latitude || (existingLocal && existingLocal.local ? existingLocal.local.latitude : ""),
             longitude: row.longitude || (existingLocal && existingLocal.local ? existingLocal.local.longitude : "")
           },
-          historico: tankHist.map(function(h){
-            return {
-              id: h.id,
-              data: h.data,
-              tipo: h.tipo,
-              produtor: h.produtor,
-              litros: h.litros,
-              desc: h.desc_texto || "",
-              fotos: h.fotos || [],
-              criadoEm: h.created_at || null
-            };
-          })
+          historico: mergedHist
         };
       });
 
@@ -2390,7 +2408,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.24";
+  var CURRENT_VERSION = "v2.0.25";
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
@@ -2674,9 +2692,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.24</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.25</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.24</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.25</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -4114,7 +4132,7 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.24</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.25</div>'+
     '<div class="note" style="margin-top:4px;">Atualizado em 31/08/2026 (Múltiplas Fotos Simultâneas &amp; Gravação Completa na Edição).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
