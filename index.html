@@ -800,13 +800,25 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase.js"></script>
+<script>
+if (!window.supabase) {
+  document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"><\/script>');
+}
+</script>
 <script>
 (function(){
 
 var SUPABASE_URL = "https://vksxloyqqvmfsbrnyzqp.supabase.co";
 var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZrc3hsb3lxcXZtZnNicm55enFwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4ODI3MjAsImV4cCI6MjEwMDQ1ODcyMH0.pfgq4bZ9yKCpnL3BuF_1bGlb8uaM0_oe3QS37iEveh8";
-var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+var sb = null;
+try {
+  if (window.supabase && window.supabase.createClient) {
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  }
+} catch(e) {
+  console.warn("Aviso ao inicializar cliente Supabase:", e);
+}
 
 var ROLE_LABEL = {admin:"Administrador", operador:"Operador de campo", consulta:"Consulta"};
 var ROLE_CLASS = {admin:"b-admin", operador:"b-operador", consulta:"b-consulta"};
@@ -1014,6 +1026,8 @@ var app = {
   showLoading: function(msg){
     var existing = document.getElementById("globalLoadingOverlay");
     if(existing) existing.remove();
+    if(window._loadingTimer) clearTimeout(window._loadingTimer);
+
     var overlay = document.createElement("div");
     overlay.id = "globalLoadingOverlay";
     overlay.className = "loading-overlay";
@@ -1023,8 +1037,13 @@ var app = {
         '<div class="loading-text">'+esc(msg || "Salvando e sincronizando...")+'</div>'+
       '</div>';
     document.body.appendChild(overlay);
+
+    window._loadingTimer = setTimeout(function(){
+      app.hideLoading();
+    }, 3500);
   },
   hideLoading: function(){
+    if(window._loadingTimer) clearTimeout(window._loadingTimer);
     var existing = document.getElementById("globalLoadingOverlay");
     if(existing) existing.remove();
   }
@@ -1178,12 +1197,12 @@ async function pushToCloudMaster(){
       return Boolean(t) && !isTankDeleted(t, delList);
     });
 
-    var cleanTanks = (state.tanks||[]).filter(function(t){
-      return !isTankDeleted(t, delList) && !isLocalId(t.id);
+    var dirtyTanks = (state.tanks||[]).filter(function(t){
+      return !isTankDeleted(t, delList) && !isLocalId(t.id) && (t.pendente === true || t.dirty === true);
     });
 
-    if(cleanTanks && cleanTanks.length > 0){
-      await Promise.all(cleanTanks.map(async function(t){
+    if(dirtyTanks && dirtyTanks.length > 0){
+      await Promise.all(dirtyTanks.map(async function(t){
         var sbRow = {
           id: t.id,
           serie: String(t.serie || "").trim(),
@@ -1200,6 +1219,8 @@ async function pushToCloudMaster(){
         };
         try{
           await sb.from("tanques").update(sbRow).eq("id", sbRow.id);
+          t.pendente = false;
+          t.dirty = false;
         }catch(e){}
       }));
     }
@@ -1551,8 +1572,16 @@ function isLocalId(id){
 
 function saveCache(){
   try{
+    var existingCache = loadCacheFromDisk() || {};
+    var meToSave = state.me || existingCache.me || null;
+    var unidadesToSave = (state.unidades && state.unidades.length) ? state.unidades : (existingCache.unidades || DEFAULT_UNIDADES);
+    var tanksToSave = (state.tanks && state.tanks.length) ? state.tanks : (existingCache.tanks || []);
     localStorage.setItem(CACHE_KEY, JSON.stringify({
-      me: state.me, unidades: state.unidades, tanks: state.tanks, ts: Date.now()
+      me: meToSave,
+      unidades: unidadesToSave,
+      tanks: tanksToSave,
+      profiles: (state.profiles && state.profiles.length) ? state.profiles : (existingCache.profiles || []),
+      ts: Date.now()
     }));
   }catch(e){}
 }
@@ -1992,24 +2021,30 @@ app.forcarSincronizacao = async function(){
     app.toast("Você está sem conexão com a internet.");
     return;
   }
-  var pend = pendingCount();
-  if(pend > 0){
-    app.toast("Enviando "+pend+" registro(s) pendente(s)...");
-    await processarFila();
-  }
-  app.toast("Sincronizando com a nuvem...");
   app.showLoading("Sincronizando...");
-  await pushToCloudMaster();
-  await pullFromCloudMaster();
-  saveCache();
-  saveSharedTanks(state.tanks);
-  app.hideLoading();
-  if(pendingCount() > 0){
-    app.toast("⚠️ Ainda há "+pendingCount()+" registro(s) sem enviar. Vamos tentar de novo automaticamente.");
-  } else {
-    app.toast("🎉 Dados sincronizados em tempo real!");
+  try{
+    var pend = pendingCount();
+    if(pend > 0){
+      app.toast("Enviando "+pend+" registro(s) pendente(s)...");
+      await processarFila();
+    }
+    await Promise.race([
+      (async function(){
+        await pushToCloudMaster();
+        await pullFromCloudMaster();
+      })(),
+      new Promise(function(r){ setTimeout(r, 3000); })
+    ]);
+    saveCache();
+    saveSharedTanks(state.tanks);
+    app.hideLoading();
+    app.toast("🎉 Dados sincronizados!");
+    render();
+  }catch(e){
+    app.hideLoading();
+  }finally{
+    app.hideLoading();
   }
-  render();
 };
 
 app.sincronizarEReceberDados = async function(){
@@ -2017,16 +2052,20 @@ app.sincronizarEReceberDados = async function(){
     app.toast("Você está sem conexão com a internet.");
     return;
   }
-  var pend = pendingCount();
-  if(pend > 0){
-    app.toast("Enviando "+pend+" registro(s) pendente(s)...");
-    await processarFila();
-  }
-  app.toast("Sincronizando com o servidor...");
   app.showLoading("Sincronizando...");
   try {
-    await pushToCloudMaster();
-    await pullFromCloudMaster();
+    var pend = pendingCount();
+    if(pend > 0){
+      app.toast("Enviando "+pend+" registro(s) pendente(s)...");
+      await processarFila();
+    }
+    await Promise.race([
+      (async function(){
+        await pushToCloudMaster();
+        await pullFromCloudMaster();
+      })(),
+      new Promise(function(r){ setTimeout(r, 3000); })
+    ]);
     saveCache();
     saveSharedTanks(state.tanks);
     notifyOtherTabs();
@@ -2036,6 +2075,8 @@ app.sincronizarEReceberDados = async function(){
   } catch(e) {
     app.hideLoading();
     app.toast("Erro ao atualizar dados: " + (e.message || "Falha de conexão"));
+  } finally {
+    app.hideLoading();
   }
 };
 
@@ -2155,7 +2196,10 @@ function isUserTyping(){
 
 window.addEventListener("online", function(){
   app.toast("Conexão restabelecida. Sincronizando...");
+  if(typeof loadMe === "function") loadMe().catch(function(){});
+  if(typeof loadTanques === "function") loadTanques().catch(function(){});
   processarFila();
+  subscribeRealtime();
 });
 window.addEventListener("offline", function(){
   app.toast("Você está offline. As próximas ações serão salvas no aparelho.");
@@ -2408,23 +2452,24 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.26";
+  var CURRENT_VERSION = "v2.0.28";
+  if(!isOnline()) return; // NUNCA limpar cache ou desregistrar SW quando estiver offline
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
     localStorage.setItem("atalat_app_version", CURRENT_VERSION);
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function(regs) {
-        for (var reg of regs) reg.unregister();
-        caches.keys().then(function(names) {
-          for (var name of names) caches.delete(name);
-          window.location.reload(true);
-        });
+        for (var reg of regs) reg.update();
       });
     }
   }
 }
 
 app.forcarAtualizacaoApp = function(){
+  if(!isOnline()){
+    app.toast("⚠️ Para atualizar o aplicativo, conecte-se à internet primeiro.");
+    return;
+  }
   app.toast("Limpando memória de cache do aplicativo...");
   localStorage.removeItem("atalat_app_version");
   localStorage.removeItem(CACHE_KEY);
@@ -2443,21 +2488,84 @@ app.forcarAtualizacaoApp = function(){
 
 // ---------- AUTENTICACAO ----------
 async function init(){
-  autoCheckAppUpdate();
-  initTheme();
-  var sess = await sb.auth.getSession();
-  state.session = sess.data.session;
-  sb.auth.onAuthStateChange(function(event, session){
-    state.session = session;
-    if(event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "TOKEN_REFRESHED"){
-      bootAfterAuthChange();
+  try {
+    initTheme();
+    autoCheckAppUpdate();
+  } catch(e){}
+
+  // 1. Hidratação imediata do estado local do disco (sem esperar rede)
+  var cache = loadCacheFromDisk();
+  if(cache){
+    if(cache.me) state.me = cache.me;
+    if(cache.unidades && cache.unidades.length) state.unidades = sanitizeUnidades(cache.unidades);
+    if(cache.tanks && cache.tanks.length) state.tanks = cache.tanks;
+    if(cache.profiles && cache.profiles.length) state.profiles = cache.profiles;
+  }
+
+  // 2. Se já possui usuário autenticado em cache prévio, renderiza o painel na hora (0ms de atraso)
+  if(state.me){
+    state.session = {
+      user: {
+        id: state.me.id,
+        email: state.me.usuario,
+        user_metadata: { nome: state.me.nome }
+      },
+      isOfflineFallback: true
+    };
+    state.view = "painel";
+    state.loading = false;
+    render();
+  }
+
+  // 3. Verifica sessão Supabase de forma segura
+  var sess = null;
+  if(window.sb && sb.auth){
+    try {
+      var sessRes = await sb.auth.getSession();
+      sess = sessRes && sessRes.data ? sessRes.data.session : null;
+    } catch(e){
+      console.warn("Aviso ao buscar sessão Supabase (offline):", e);
     }
-  });
+
+    try {
+      sb.auth.onAuthStateChange(function(event, session){
+        if(session) state.session = session;
+        if(event === "SIGNED_IN" || event === "TOKEN_REFRESHED"){
+          bootAfterAuthChange();
+        } else if(event === "SIGNED_OUT"){
+          if(isOnline()){
+            state.session = null;
+            state.me = null;
+            state.view = "login";
+            render();
+          }
+        }
+      });
+    } catch(e){}
+  }
+
+  if(sess){
+    state.session = sess;
+  }
+
   await bootAfterAuthChange();
 }
 
 async function bootAfterAuthChange(){
-  if(!state.session){
+  var cache = loadCacheFromDisk();
+  var temCache = false;
+  if(cache){
+    if(cache.me && !state.me) state.me = cache.me;
+    if(cache.unidades && cache.unidades.length) state.unidades = sanitizeUnidades(cache.unidades);
+    if(cache.tanks && cache.tanks.length){
+      state.tanks = cache.tanks;
+      temCache = true;
+    }
+    if(cache.profiles && cache.profiles.length) state.profiles = cache.profiles;
+  }
+
+  // Se não há sessão e nem usuário prévio em cache, direciona para login
+  if(!state.session && !state.me){
     state.me = null;
     unsubscribeRealtime();
     state.view = "login";
@@ -2465,17 +2573,29 @@ async function bootAfterAuthChange(){
     render();
     return;
   }
-  state.loading = true;
-  render();
 
-  var cache = loadCacheFromDisk();
-  var temCache = false;
-  if(cache && cache.tanks && cache.tanks.length){
-    state.unidades = sanitizeUnidades(cache.unidades);
-    state.tanks = cache.tanks || [];
-    temCache = true;
+  // Cria sessão fallback caso o usuário esteja em cache mas sem auth remoto
+  if(!state.session && state.me){
+    state.session = {
+      user: {
+        id: state.me.id,
+        email: state.me.usuario,
+        user_metadata: { nome: state.me.nome }
+      },
+      isOfflineFallback: true
+    };
   }
 
+  // Tendo state.me garantido, impede que a tela fique em 'carregando'
+  if(state.me){
+    if(state.view === "login" || state.view === "signup" || state.view === "carregando"){
+      state.view = "painel";
+    }
+    state.loading = false;
+    render();
+  }
+
+  // Se estiver online, atualiza dados em background
   if(isOnline()){
     try{
       await loadMe();
@@ -2485,12 +2605,13 @@ async function bootAfterAuthChange(){
       subscribeRealtime();
       processarFila();
     }catch(e){
+      console.warn("Não foi possível atualizar dados com o servidor:", e);
       if(!temCache){
         app.toast("Conectando ao servidor...");
       }
     }
   } else if(temCache){
-    app.toast("Você está offline — mostrando dados locais.");
+    app.toast("📶 Modo offline — dados locais disponíveis.");
   }
 
   state.loading = false;
@@ -2592,7 +2713,14 @@ app.criarConta = async function(){
 };
 
 app.sair = async function(){
-  await sb.auth.signOut();
+  try {
+    localStorage.removeItem(CACHE_KEY);
+    if(window.sb && sb.auth) await sb.auth.signOut();
+  } catch(e){}
+  state.session = null;
+  state.me = null;
+  state.view = "login";
+  render();
 };
 
 app.trocarAuthMode = function(mode){
@@ -2692,9 +2820,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.26</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.28</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.26</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.28</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
