@@ -1988,10 +1988,20 @@ async function processarFila(){
   var q = getQueue();
   if(!q.length) return;
 
+  // Filtrar itens inválidos/nulos antes de iniciar
+  q = q.filter(function(i){
+    return i && typeof i === "object" && i.kind && i.payload;
+  });
+  setQueue(q);
+  if(!q.length) return;
+
   sincronizando = true;
   render();
 
   var stoppedOnError = false;
+  var processedCount = 0;
+  var skippedCount = 0;
+
   while(q.length){
     var item = q[0];
     try{
@@ -2001,21 +2011,51 @@ async function processarFila(){
       }
       q.shift();
       setQueue(q);
+      processedCount++;
     }catch(e){
-      console.warn("Falha ao sincronizar item da fila, será tentado novamente mais tarde:", e);
-      stoppedOnError = true;
-      break;
+      console.warn("Falha ao sincronizar item da fila:", item, e);
+      item.retries = (item.retries || 0) + 1;
+      var errMsg = String(e && (e.message || e.details || e.hint || e) || "");
+      
+      var isFatal = item.retries >= 3 || 
+                    errMsg.includes("foreign key") || 
+                    errMsg.includes("violates foreign key constraint") ||
+                    errMsg.includes("invalid input syntax") ||
+                    errMsg.includes("column") ||
+                    errMsg.includes("does not exist") ||
+                    errMsg.includes("not-null constraint") ||
+                    !item.kind;
+
+      if(isFatal){
+        console.error("Item da fila corrompido ou com erro fatal. Salvando no backup (atalat_failed_queue_v1) e removendo da fila ativa para desbloquear sincronização:", item, e);
+        try {
+          var failed = JSON.parse(localStorage.getItem("atalat_failed_queue_v1") || "[]");
+          failed.push({ item: item, error: errMsg, failedAt: Date.now() });
+          localStorage.setItem("atalat_failed_queue_v1", JSON.stringify(failed));
+        } catch(errF) {}
+        
+        q.shift();
+        setQueue(q);
+        skippedCount++;
+      } else {
+        setQueue(q);
+        stoppedOnError = true;
+        break;
+      }
     }
   }
 
   sincronizando = false;
-  if(!stoppedOnError){
+  if(!stoppedOnError || processedCount > 0 || skippedCount > 0){
     state.tanks.forEach(function(t){ t.pendente = false; t.historico && t.historico.forEach(function(h){ h.pendente = false; }); });
   }
   saveCache();
   saveSharedTanks(state.tanks);
-  if(!stoppedOnError){
+  if(!stoppedOnError || processedCount > 0){
     await pullFromCloudMaster();
+  }
+  if(skippedCount > 0){
+    app.toast("⚠️ "+skippedCount+" registro(s) com erro foram salvos no backup para desbloquear o envio dos demais.");
   }
   render();
 }
@@ -2095,49 +2135,98 @@ function aplicarRemapeamento(oldId, newId, restanteDaFila){
 }
 
 async function aplicarItemRemoto(item){
+  if(!item || !item.payload) throw new Error("Item de fila inválido");
   var p = item.payload;
+
   if(item.kind === "novo_tanque_com_visita"){
-    var dbUnidUuid = getUnidadeUuid(p.unidadeId);
-    var insertRes = await sb.from("tanques").insert({
-      serie: p.serie, patrimonio: p.patrimonio, capacidade: p.capacidade || 0,
-      marca: p.marca || null, ano_fabricacao: p.ano_fabricacao ? parseInt(p.ano_fabricacao) : null,
-      status: "estoque", unidade_id: dbUnidUuid,
-      municipio: p.municipio, latitude: p.latitude || null, longitude: p.longitude || null
-    }).select().single();
-    if(insertRes.error) throw insertRes.error;
-    var novoId = insertRes.data.id;
+    var dbUnidUuid = getUnidadeUuid(p.unidadeId || (state && state.currentUnitId));
+    var novoId = null;
+
+    if (p.serie) {
+      try {
+        var existing = await sb.from("tanques").select("id").eq("serie", String(p.serie).trim()).maybeSingle();
+        if (existing && existing.data && existing.data.id) {
+          novoId = existing.data.id;
+        }
+      } catch(eExist) {}
+    }
+
+    if(!novoId){
+      var insertRes = await sb.from("tanques").insert({
+        serie: p.serie ? String(p.serie).trim() : "SN-"+Date.now(),
+        patrimonio: p.patrimonio || null,
+        capacidade: p.capacidade || 0,
+        marca: p.marca || null,
+        ano_fabricacao: p.ano_fabricacao ? parseInt(p.ano_fabricacao) : null,
+        status: "estoque",
+        unidade_id: dbUnidUuid,
+        municipio: p.municipio || null,
+        latitude: p.latitude || null,
+        longitude: p.longitude || null
+      }).select().single();
+      if(insertRes.error) throw insertRes.error;
+      novoId = insertRes.data.id;
+    }
 
     if(p.produtorNome){
-      await sb.from("tanques").update({produtor_nome: p.produtorNome, produtor_propriedade: p.produtorProp}).eq("id", novoId);
+      try {
+        await sb.from("tanques").update({produtor_nome: p.produtorNome, produtor_propriedade: p.produtorProp || null}).eq("id", novoId);
+      } catch(eUpd) {}
     }
+
     var histRes = await sb.from("historico").insert({
-      tanque_id: novoId, data: p.data, tipo: p.tipo,
-      produtor: p.produtorNome || "—", litros: p.capacidade || 0,
-      desc_texto: p.desc || "(sem observações)", fotos: []
+      tanque_id: novoId,
+      data: p.data || new Date().toISOString().slice(0,10),
+      tipo: p.tipo || "Visita Inicial",
+      produtor: p.produtorNome || "—",
+      litros: p.capacidade || 0,
+      desc_texto: p.desc || "(sem observações)",
+      fotos: []
     }).select().single();
     if(histRes.error) throw histRes.error;
 
     if(p.fotosBase64){
-      try{ await enviarFotosDoRegistro(p.fotosBase64, p.unidadeId, novoId, histRes.data.id); }catch(fotoErr){}
+      try{ await enviarFotosDoRegistro(p.fotosBase64, p.unidadeId || (state && state.currentUnitId), novoId, histRes.data.id); }catch(fotoErr){}
     }
 
     return {oldId: p.tanqueIdLocal, newId: novoId};
   }
 
   if(item.kind === "nova_visita_existente"){
-    if(Object.keys(p.patchTank||{}).length){
-      var u1 = await sb.from("tanques").update(p.patchTank).eq("id", p.tanqueId);
-      if(u1.error) throw u1.error;
+    var targetTankId = p.tanqueId;
+
+    if (!targetTankId || String(targetTankId).startsWith("LOCAL_")) {
+      if (p.patchTank && p.patchTank.serie) {
+        try {
+          var tDb = await sb.from("tanques").select("id").eq("serie", String(p.patchTank.serie).trim()).maybeSingle();
+          if (tDb && tDb.data && tDb.data.id) targetTankId = tDb.data.id;
+        } catch(eFind) {}
+      }
     }
+
+    if(Object.keys(p.patchTank||{}).length && targetTankId){
+      try {
+        await sb.from("tanques").update(p.patchTank).eq("id", targetTankId);
+      } catch(eUpd) {}
+    }
+
+    if (!targetTankId) {
+      throw new Error("Não foi possível resolver o ID do tanque para a visita");
+    }
+
     var h1 = await sb.from("historico").insert({
-      tanque_id: p.tanqueId, data: p.data, tipo: p.tipo,
-      produtor: p.produtorNome || "—", litros: p.litros || 0,
-      desc_texto: p.desc || "(sem observações)", fotos: []
+      tanque_id: targetTankId,
+      data: p.data || new Date().toISOString().slice(0,10),
+      tipo: p.tipo || "Visita",
+      produtor: p.produtorNome || "—",
+      litros: p.litros || 0,
+      desc_texto: p.desc || "(sem observações)",
+      fotos: []
     }).select().single();
     if(h1.error) throw h1.error;
 
     if(p.fotosBase64){
-      try{ await enviarFotosDoRegistro(p.fotosBase64, p.unidadeId, p.tanqueId, h1.data.id); }catch(fotoErr){}
+      try{ await enviarFotosDoRegistro(p.fotosBase64, p.unidadeId || (state && state.currentUnitId), targetTankId, h1.data.id); }catch(fotoErr){}
     }
 
     return null;
@@ -2148,40 +2237,46 @@ async function aplicarItemRemoto(item){
     var targetSerie = p.patch ? (p.patch.serie || "") : "";
 
     try{
-      await sb.from("tanques").update(p.patch).eq("id", p.tanqueId);
+      if(p.tanqueId) await sb.from("tanques").update(p.patch).eq("id", p.tanqueId);
       if(targetUuid && targetUuid !== p.tanqueId){
         await sb.from("tanques").update(p.patch).eq("id", targetUuid);
       }
       if(targetSerie){
         await sb.from("tanques").update(p.patch).eq("serie", targetSerie);
       }
-      await sb.from("tanques").upsert([{ id: targetUuid || p.tanqueId, ...p.patch }], { onConflict: "id" });
     }catch(e){}
     return null;
   }
 
   if(item.kind === "transferir_unidade"){
+    if(!p.tanqueId) throw new Error("tanqueId ausente no item de transferência");
+    var dbNovaUnidUuid = getUnidadeUuid(p.novaUnidadeId);
     var u3 = await sb.from("tanques").update({
-      unidade_id: p.novaUnidadeId,
+      unidade_id: dbNovaUnidUuid,
       produtor_nome: null,
       produtor_propriedade: null,
       status: "estoque"
     }).eq("id", p.tanqueId);
     if(u3.error) throw u3.error;
     var h3 = await sb.from("historico").insert({
-      tanque_id: p.tanqueId, data: p.data, tipo: "Transferência de unidade",
-      produtor: p.produtor || "—", litros: p.litros || 0, desc_texto: p.desc, fotos: []
+      tanque_id: p.tanqueId,
+      data: p.data || new Date().toISOString().slice(0,10),
+      tipo: "Transferência de unidade",
+      produtor: p.produtor || "—",
+      litros: p.litros || 0,
+      desc_texto: p.desc || "Transferência de unidade",
+      fotos: []
     });
     if(h3.error) throw h3.error;
     return null;
   }
 
   if(item.kind === "excluir_tanque"){
-    var d1 = await sb.from("tanques").delete().eq("id", p.tanqueId);
-    if(d1.error) throw d1.error;
+    if(p.tanqueId){
+      await sb.from("tanques").delete().eq("id", p.tanqueId);
+    }
     if(p.serie){
-      var d2 = await sb.from("tanques").delete().eq("serie", p.serie);
-      if(d2.error) throw d2.error;
+      await sb.from("tanques").delete().eq("serie", p.serie);
     }
     return null;
   }
@@ -2456,7 +2551,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.30";
+  var CURRENT_VERSION = "v2.0.31";
   if(!isOnline()) return; // NUNCA limpar cache ou desregistrar SW quando estiver offline
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
@@ -2857,9 +2952,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.30</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.31</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.30</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.31</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -4311,7 +4406,7 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.30</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.31</div>'+
     '<div class="note" style="margin-top:4px;">Atualizado em 21/09/2026 (Economia de Dados Móveis 95% &amp; Sincronização Ultra-Rápida entre Usuários).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
