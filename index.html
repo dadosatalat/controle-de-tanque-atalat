@@ -2304,13 +2304,62 @@ async function aplicarItemRemoto(item){
   if(item.kind === "nova_visita_existente"){
     var targetTankId = p.tanqueId;
 
-    if (!targetTankId || String(targetTankId).startsWith("LOCAL_")) {
-      if (p.patchTank && p.patchTank.serie) {
-        try {
-          var tDb = await sb.from("tanques").select("id").eq("serie", String(p.patchTank.serie).trim()).maybeSingle();
-          if (tDb && tDb.data && tDb.data.id) targetTankId = tDb.data.id;
-        } catch(eFind) {}
+    // Verificar se targetTankId é um UUID válido (36 caracteres com hífens)
+    var isValidUuid = typeof targetTankId === "string" && targetTankId.length === 36 && targetTankId.indexOf("-") !== -1;
+    if (!isValidUuid) {
+      var realUuid = null;
+      var serie = p.patchTank ? String(p.patchTank.serie || "").trim() : "";
+      var patrimonio = p.patchTank ? String(p.patchTank.patrimonio || "").trim() : "";
+
+      // 1. Procurar no estado local por id, serie ou patrimonio
+      if (state && state.tanks && state.tanks.length) {
+        var tInState = state.tanks.find(function(t){
+          return (t.id && t.id === targetTankId) ||
+                 (serie && String(t.serie || "").trim().toUpperCase() === serie.toUpperCase()) ||
+                 (patrimonio && String(t.patrimonio || "").trim().toUpperCase() === patrimonio.toUpperCase());
+        });
+        if (tInState) {
+          if (tInState.id && tInState.id.length === 36 && tInState.id.indexOf("-") !== -1) {
+            realUuid = tInState.id;
+          }
+          if (!serie && tInState.serie) serie = String(tInState.serie).trim();
+          if (!patrimonio && tInState.patrimonio) patrimonio = String(tInState.patrimonio).trim();
+        }
       }
+
+      // 2. Buscar no Supabase pelo número de série
+      if (!realUuid && serie) {
+        try {
+          var tDb = await sb.from("tanques").select("id").eq("serie", serie).maybeSingle();
+          if (tDb && tDb.data && tDb.data.id) realUuid = tDb.data.id;
+        } catch(e1) {}
+      }
+
+      // 3. Buscar no Supabase pelo patrimônio
+      if (!realUuid && patrimonio) {
+        try {
+          var tDb2 = await sb.from("tanques").select("id").eq("patrimonio", patrimonio).maybeSingle();
+          if (tDb2 && tDb2.data && tDb2.data.id) realUuid = tDb2.data.id;
+        } catch(e2) {}
+      }
+
+      // 4. Fallback: converter targetTankId para UUID determinístico e garantir cadastro no Supabase
+      if (!realUuid) {
+        realUuid = tankToUUID(p.patchTank || targetTankId);
+        try {
+          var dbUnidUuid = getUnidadeUuid(p.unidadeId || (state && state.currentUnitId));
+          await sb.from("tanques").upsert({
+            id: realUuid,
+            serie: serie || ("SN-" + Date.now()),
+            patrimonio: patrimonio || null,
+            capacidade: p.patchTank ? (p.patchTank.capacidade || 0) : 0,
+            status: p.patchTank ? (p.patchTank.status || "estoque") : "estoque",
+            unidade_id: dbUnidUuid
+          }, { onConflict: "id" });
+        } catch(eUpsert) {}
+      }
+
+      targetTankId = realUuid;
     }
 
     if(Object.keys(p.patchTank||{}).length && targetTankId){
@@ -2319,7 +2368,7 @@ async function aplicarItemRemoto(item){
       } catch(eUpd) {}
     }
 
-    if (!targetTankId) {
+    if (!targetTankId || targetTankId.length !== 36) {
       throw new Error("Não foi possível resolver o ID do tanque para a visita");
     }
 
@@ -2346,7 +2395,9 @@ async function aplicarItemRemoto(item){
     var targetSerie = p.patch ? (p.patch.serie || "") : "";
 
     try{
-      if(p.tanqueId) await sb.from("tanques").update(p.patch).eq("id", p.tanqueId);
+      if(p.tanqueId && p.tanqueId.length === 36 && p.tanqueId.indexOf("-") !== -1) {
+        await sb.from("tanques").update(p.patch).eq("id", p.tanqueId);
+      }
       if(targetUuid && targetUuid !== p.tanqueId){
         await sb.from("tanques").update(p.patch).eq("id", targetUuid);
       }
@@ -2359,16 +2410,30 @@ async function aplicarItemRemoto(item){
 
   if(item.kind === "transferir_unidade"){
     if(!p.tanqueId) throw new Error("tanqueId ausente no item de transferência");
+    var targetTankIdTr = p.tanqueId;
+    if (typeof targetTankIdTr !== "string" || targetTankIdTr.length !== 36 || targetTankIdTr.indexOf("-") === -1) {
+      if (p.serie) {
+        try {
+          var tDbTr = await sb.from("tanques").select("id").eq("serie", String(p.serie).trim()).maybeSingle();
+          if (tDbTr && tDbTr.data && tDbTr.data.id) targetTankIdTr = tDbTr.data.id;
+        } catch(e1) {}
+      }
+      if (targetTankIdTr.length !== 36 || targetTankIdTr.indexOf("-") === -1) {
+        targetTankIdTr = tankToUUID(p.tanqueId);
+      }
+    }
+
     var dbNovaUnidUuid = getUnidadeUuid(p.novaUnidadeId);
     var u3 = await sb.from("tanques").update({
       unidade_id: dbNovaUnidUuid,
       produtor_nome: null,
       produtor_propriedade: null,
       status: "estoque"
-    }).eq("id", p.tanqueId);
+    }).eq("id", targetTankIdTr);
     if(u3.error) throw u3.error;
+    
     var h3 = await sb.from("historico").insert({
-      tanque_id: p.tanqueId,
+      tanque_id: targetTankIdTr,
       data: p.data || new Date().toISOString().slice(0,10),
       tipo: "Transferência de unidade",
       produtor: p.produtor || "—",
