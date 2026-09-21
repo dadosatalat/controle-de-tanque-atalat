@@ -2124,6 +2124,115 @@ app.sincronizarEReceberDados = async function(){
   }
 };
 
+app.abrirFilaBackup = function(){
+  var existing = document.querySelector(".backup-modal-wrap");
+  if(existing) existing.remove();
+
+  var failedRaw = localStorage.getItem("atalat_failed_queue_v1");
+  var failedList = [];
+  try { if(failedRaw) failedList = JSON.parse(failedRaw); } catch(e){}
+
+  var modal = document.createElement("div");
+  modal.className = "backup-modal-wrap no-print";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;";
+
+  var cardsHtml = "";
+  if(!failedList || !failedList.length){
+    cardsHtml = '<div style="text-align:center;padding:32px 16px;color:#64748b;">✅ Nenhum registro com erro no backup.<br><span style="font-size:12px;opacity:0.8;">Todos os envios foram processados com sucesso.</span></div>';
+  } else {
+    cardsHtml = failedList.map(function(itemObj, idx){
+      var item = itemObj.item || {};
+      var p = item.payload || {};
+      var dateStr = itemObj.failedAt ? new Date(itemObj.failedAt).toLocaleString("pt-BR") : "Data desconhecida";
+      var kindLabel = item.kind === "novo_tanque_com_visita" ? "Novo Tanque + Visita" :
+                        item.kind === "nova_visita_existente" ? "Nova Visita" :
+                        item.kind === "editar_tanque" ? "Edição de Tanque" :
+                        item.kind === "transferir_unidade" ? "Transferência de Unidade" :
+                        item.kind === "excluir_tanque" ? "Exclusão de Tanque" : (item.kind || "Registro");
+      var infoText = p.serie ? ("Série: " + p.serie) : (p.produtorNome ? ("Produtor: " + p.produtorNome) : (p.tanqueId ? ("ID Tanque: " + p.tanqueId) : ""));
+
+      return '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:10px;">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'+
+          '<span style="font-weight:700;font-size:13px;color:#0f172a;">'+kindLabel+'</span>'+
+          '<span style="font-size:11px;color:#64748b;">'+dateStr+'</span>'+
+        '</div>'+
+        (infoText ? '<div style="font-size:12px;color:#334155;margin-bottom:4px;"><b>Detalhes:</b> '+infoText+'</div>' : '')+
+        '<div style="font-size:11px;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;padding:6px 8px;border-radius:6px;word-break:break-all;margin-bottom:8px;">'+
+          '<b>Erro:</b> '+(itemObj.error || "Erro desconhecido")+
+        '</div>'+
+        '<div style="display:flex;gap:6px;justify-content:flex-end;">'+
+          '<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11.5px;" onclick="app.reenviarItemBackup('+idx+')">🔄 Tentar Reenviar</button>'+
+          '<button type="button" class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px;color:#dc2626;border:1px solid #fecaca;" onclick="app.descartarItemBackup('+idx+')">🗑️ Descartar</button>'+
+        '</div>'+
+      '</div>';
+    }).join("");
+  }
+
+  var contentHtml = '<div style="background:#fff;width:100%;max-width:540px;max-height:85vh;border-radius:16px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 25px -5px rgba(0,0,0,0.2);">'+
+    '<div style="padding:16px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;background:#f8fafc;">'+
+      '<div>'+
+        '<div style="font-weight:700;font-size:15px;color:#0f172a;">📦 Registros no Backup de Incompatibilidade</div>'+
+        '<div style="font-size:11.5px;color:#64748b;">Registros removidos da fila ativa para não travar a sincronização</div>'+
+      '</div>'+
+      '<button type="button" style="background:none;border:none;font-size:20px;cursor:pointer;color:#64748b;" onclick="app.fecharModalBackup()">✕</button>'+
+    '</div>'+
+    '<div style="padding:16px;overflow-y:auto;flex:1;">'+
+      cardsHtml+
+    '</div>'+
+    '<div style="padding:12px 16px;border-top:1px solid #e2e8f0;background:#f8fafc;display:flex;justify-content:space-between;align-items:center;">'+
+      (failedList.length ? '<button type="button" class="btn btn-ghost" style="padding:6px 12px;font-size:12px;color:#dc2626;border:1px solid #fecaca;" onclick="app.limparTodosBackup()">🗑️ Limpar Todos</button>' : '<span></span>')+
+      '<button type="button" class="btn btn-primary" style="padding:6px 16px;font-size:12px;" onclick="app.fecharModalBackup()">Fechar</button>'+
+    '</div>'+
+  '</div>';
+
+  modal.innerHTML = contentHtml;
+  document.body.appendChild(modal);
+};
+
+app.fecharModalBackup = function(){
+  var wrap = document.querySelector(".backup-modal-wrap");
+  if(wrap) wrap.remove();
+};
+
+app.reenviarItemBackup = function(idx){
+  var failedRaw = localStorage.getItem("atalat_failed_queue_v1");
+  var failedList = [];
+  try { if(failedRaw) failedList = JSON.parse(failedRaw); } catch(e){}
+  
+  if(idx < 0 || idx >= failedList.length) return;
+  var target = failedList.splice(idx, 1)[0];
+  localStorage.setItem("atalat_failed_queue_v1", JSON.stringify(failedList));
+
+  if(target && target.item){
+    delete target.item.retries;
+    var q = getQueue();
+    q.push(target.item);
+    setQueue(q);
+    app.toast("🔄 Registro colocado de volta na fila. Sincronizando...");
+    app.fecharModalBackup();
+    processarFila();
+  }
+};
+
+app.descartarItemBackup = function(idx){
+  var failedRaw = localStorage.getItem("atalat_failed_queue_v1");
+  var failedList = [];
+  try { if(failedRaw) failedList = JSON.parse(failedRaw); } catch(e){}
+  
+  if(idx < 0 || idx >= failedList.length) return;
+  failedList.splice(idx, 1);
+  localStorage.setItem("atalat_failed_queue_v1", JSON.stringify(failedList));
+  app.toast("🗑️ Registro descartado do backup.");
+  app.abrirFilaBackup();
+};
+
+app.limparTodosBackup = function(){
+  if(!confirm("Deseja realmente apagar todos os registros salvos no backup de incompatibilidade?")) return;
+  localStorage.removeItem("atalat_failed_queue_v1");
+  app.toast("🗑️ Backup de registros limpo.");
+  app.fecharModalBackup();
+};
+
 function aplicarRemapeamento(oldId, newId, restanteDaFila){
   restanteDaFila.forEach(function(it){
     if(it.payload && it.payload.tanqueId === oldId) it.payload.tanqueId = newId;
@@ -2551,7 +2660,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.31";
+  var CURRENT_VERSION = "v2.0.32";
   if(!isOnline()) return; // NUNCA limpar cache ou desregistrar SW quando estiver offline
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
@@ -2952,9 +3061,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.31</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.32</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.31</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.32</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -4403,15 +4512,22 @@ function renderConfig(){
         '<div style="font-size:14px;font-weight:700;">'+(pend === 0 ? '✅ Todos os dados estão sincronizados' : '⚠️ '+pend+' registro(s) pendente(s) de envio')+'</div>'+
       '</div>'+
     '</div>';
+  var failedCount = 0;
+  try {
+    var failedRaw = localStorage.getItem("atalat_failed_queue_v1");
+    if(failedRaw) failedCount = JSON.parse(failedRaw).length;
+  } catch(e){}
+
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.31</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 21/09/2026 (Economia de Dados Móveis 95% &amp; Sincronização Ultra-Rápida entre Usuários).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.32</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 21/09/2026 (Recuperação de Registros com Backup Seguro).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
       '<button class="btn btn-primary" style="padding:8px 12px;font-size:12px;" onclick="app.forcarSincronizacao()">'+(sincronizando ? 'Sincronizando...' : '🔄 Sincronizar Agora')+'</button>'+
+      '<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.abrirFilaBackup()">📦 Registros no Backup'+(failedCount > 0 ? ' ('+failedCount+')' : '')+'</button>'+
       '<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarRecarregarDados()">📥 Recarregar da Nuvem</button>'+
       '<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🧹 Limpar Cache &amp; Reinstalar</button>'+
       (hasPerm("admin") ? '<button class="btn btn-danger" style="padding:8px 12px;font-size:12px;" onclick="app.resetarBaseDeTanques()">🗑️ Resetar Tanques</button>' : '')+
