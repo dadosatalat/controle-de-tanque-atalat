@@ -870,18 +870,26 @@ function dedupeTanks(list){
   for(var i=0; i<list.length; i++){
     var t = list[i];
     if(!t) continue;
-    var key = (t.serie || t.id || "").toString().trim().toUpperCase();
-    if(!key) continue;
+    var idKey = (t.id || "").toString().trim().toUpperCase();
+    var serieKey = (t.serie || "").toString().trim().toUpperCase();
+    var isGeneric = !serieKey || serieKey === "-" || serieKey === "S/N" || serieKey === "0" || serieKey === "SEM_SERIE" || serieKey === "SEM SERIE";
+
+    var key = idKey;
+    if(!key && !isGeneric){
+      key = "SERIE_" + serieKey;
+    }
+    if(!key){
+      key = "AUTO_" + i + "_" + (t.patrimonio || Math.random());
+    }
 
     if(!map.has(key)){
       map.set(key, t);
     } else {
       var existing = map.get(key);
-      var extHist = Array.isArray(existing.historico) ? existing.historico.length : 0;
-      var newHist = Array.isArray(t.historico) ? t.historico.length : 0;
-      if(newHist >= extHist){
-        map.set(key, t);
-      }
+      var mergedHist = mergeHistories(existing.historico, t.historico);
+      var merged = Object.assign({}, existing, t);
+      merged.historico = mergedHist;
+      map.set(key, merged);
     }
   }
   return Array.from(map.values());
@@ -1155,23 +1163,44 @@ function mergeHistories(h1, h2){
   return Array.from(map.values());
 }
 
-function mergeTanks(localList, cloudList, deletedList){
+function mergeTanks(localList, cloudList){
   var map = new Map();
-  var delList = deletedList || getDeletedTanks();
-
-  (localList || []).forEach(function(t){
-    var clean = sanitizeTank(t);
-    if(clean && !isTankDeleted(clean, delList)){
-      var key = (clean.serie || clean.id || "").toString().trim().toUpperCase();
-      if(key) map.set(key, clean);
+  var queue = getQueue();
+  var queueDeleted = new Set();
+  queue.forEach(function(qi){
+    if(qi && qi.kind === "excluir_tanque" && qi.payload){
+      if(qi.payload.tanqueId) queueDeleted.add(String(qi.payload.tanqueId).toUpperCase().trim());
+      if(qi.payload.serie) queueDeleted.add(String(qi.payload.serie).toUpperCase().trim());
     }
   });
 
-  (cloudList || []).forEach(function(t){
+  function getTankKey(t, idx){
+    var idKey = (t.id || "").toString().trim().toUpperCase();
+    var serieKey = (t.serie || "").toString().trim().toUpperCase();
+    var isGeneric = !serieKey || serieKey === "-" || serieKey === "S/N" || serieKey === "0" || serieKey === "SEM_SERIE" || serieKey === "SEM SERIE";
+    if(idKey) return idKey;
+    if(!isGeneric) return "SERIE_" + serieKey;
+    return "AUTO_" + idx + "_" + (t.patrimonio || Math.random());
+  }
+
+  (localList || []).forEach(function(t, idx){
     var clean = sanitizeTank(t);
-    if(clean && !isTankDeleted(clean, delList)){
-      var key = (clean.serie || clean.id || "").toString().trim().toUpperCase();
-      if(!key) return;
+    if(clean){
+      var tId = (clean.id || "").toString().trim().toUpperCase();
+      var tSerie = (clean.serie || "").toString().trim().toUpperCase();
+      if(queueDeleted.has(tId) || (tSerie && queueDeleted.has(tSerie))) return;
+      var key = getTankKey(clean, idx);
+      map.set(key, clean);
+    }
+  });
+
+  (cloudList || []).forEach(function(t, idx){
+    var clean = sanitizeTank(t);
+    if(clean){
+      var tId = (clean.id || "").toString().trim().toUpperCase();
+      var tSerie = (clean.serie || "").toString().trim().toUpperCase();
+      if(queueDeleted.has(tId) || (tSerie && queueDeleted.has(tSerie))) return;
+      var key = getTankKey(clean, idx);
       if(!map.has(key)){
         map.set(key, clean);
       } else {
@@ -1184,21 +1213,15 @@ function mergeTanks(localList, cloudList, deletedList){
     }
   });
 
-  var result = Array.from(map.values()).filter(function(t){
-    return !isTankDeleted(t, delList);
-  });
-  return result;
+  return Array.from(map.values());
 }
 
 async function pushToCloudMaster(){
   try{
-    var delList = getDeletedTanks();
-    state.tanks = dedupeTanks(state.tanks||[]).map(sanitizeTank).filter(function(t){
-      return Boolean(t) && !isTankDeleted(t, delList);
-    });
+    state.tanks = dedupeTanks(state.tanks||[]).map(sanitizeTank).filter(Boolean);
 
     var dirtyTanks = (state.tanks||[]).filter(function(t){
-      return !isTankDeleted(t, delList) && !isLocalId(t.id) && (t.pendente === true || t.dirty === true);
+      return !isLocalId(t.id) && (t.pendente === true || t.dirty === true);
     });
 
     if(dirtyTanks && dirtyTanks.length > 0){
@@ -1231,10 +1254,10 @@ async function pullFromCloudMaster(){
   try{
     var resList = await Promise.race([
       Promise.all([
-        sb.from("tanques").select("*").catch(function(){ return { data: [] }; }),
-        sb.from("historico").select("id, tanque_id, data, tipo, produtor, litros, desc_texto, fotos, created_at").order("created_at", { ascending: false }).catch(function(){ return { data: [] }; })
+        sb.from("tanques").select("*").range(0, 4999).catch(function(){ return { data: [] }; }),
+        sb.from("historico").select("id, tanque_id, data, tipo, produtor, litros, desc_texto, fotos, created_at").order("created_at", { ascending: false }).range(0, 9999).catch(function(){ return { data: [] }; })
       ]),
-      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error("Timeout pull cloud")); }, 4000); })
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error("Timeout pull cloud")); }, 5000); })
     ]).catch(function(e){
       console.warn("Aviso ao puxar dados da nuvem:", e);
       return null;
@@ -1316,45 +1339,24 @@ async function pullFromCloudMaster(){
         };
       });
 
-      // Preservar tanques locais pendentes que ainda não subiram para o cloud
+      // Preservar todos os tanques locais e unir com a nuvem
       var queue = getQueue();
-      var pendingLocalTanks = (state.tanks || []).filter(function(lt){
-        if(!lt) return false;
-        var isPending = lt.pendente === true || isLocalId(lt.id);
-        if(!isPending) return false;
-        var alreadyInFresh = freshTanks.some(function(ft){
-          return ft.id === lt.id || (ft.serie && lt.serie && String(ft.serie).trim().toUpperCase() === String(lt.serie).trim().toUpperCase());
-        });
-        return !alreadyInFresh;
-      });
-
-      var combinedTanks = freshTanks.concat(pendingLocalTanks);
-
-      var delList = getDeletedTanks();
-      var queueDeletedSeries = new Set();
+      var queueDeleted = new Set();
       queue.forEach(function(qi){
         if(qi && qi.kind === "excluir_tanque" && qi.payload){
-          if(qi.payload.tanqueId) queueDeletedSeries.add(String(qi.payload.tanqueId).toUpperCase().trim());
-          if(qi.payload.serie) queueDeletedSeries.add(String(qi.payload.serie).toUpperCase().trim());
+          if(qi.payload.tanqueId) queueDeleted.add(String(qi.payload.tanqueId).toUpperCase().trim());
+          if(qi.payload.serie) queueDeleted.add(String(qi.payload.serie).toUpperCase().trim());
         }
       });
 
-      var activeKeysInCloud = new Set();
-      sbRes.data.forEach(function(row){
-        if(row.id) activeKeysInCloud.add(String(row.id).toUpperCase().trim());
-        if(row.serie) activeKeysInCloud.add(String(row.serie).toUpperCase().trim());
-        if(row.patrimonio) activeKeysInCloud.add(String(row.patrimonio).toUpperCase().trim());
-      });
+      var combinedTanks = dedupeTanks(freshTanks.concat(state.tanks || []));
 
-      var cleanedDelList = delList.filter(function(d){
-        var dUpper = String(d).toUpperCase().trim();
-        if(queueDeletedSeries.has(dUpper)) return true;
-        return activeKeysInCloud.has(dUpper);
-      });
-      try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify(cleanedDelList)); }catch(e){}
-
-      var finalTanks = dedupeTanks(combinedTanks).filter(function(t){
-        return !isTankDeleted(t, cleanedDelList);
+      var finalTanks = combinedTanks.filter(function(t){
+        if(!t) return false;
+        var tId = String(t.id || "").toUpperCase().trim();
+        var tSerie = String(t.serie || "").toUpperCase().trim();
+        if(queueDeleted.has(tId) || (tSerie && queueDeleted.has(tSerie))) return false;
+        return true;
       });
 
       if(finalTanks.length > 0){
@@ -1363,7 +1365,7 @@ async function pullFromCloudMaster(){
         saveCache();
       }
     } else {
-      // Quando a nuvem retorna 0 registros (ex: RLS ou nova base): NUNCA zera o cache local!
+      // Quando a nuvem retorna 0 registros (ex: RLS ou offline): NUNCA zera o cache local!
       if(!state.tanks || state.tanks.length === 0){
         var sharedT = getSharedTanks();
         if(Array.isArray(sharedT) && sharedT.length > 0){
@@ -1384,6 +1386,7 @@ async function pullFromCloudMaster(){
     console.warn("Aviso ao puxar dados da nuvem:", e);
   }
 }
+
 
 var syncChannel = (typeof BroadcastChannel !== "undefined") ? new BroadcastChannel("atalat_sync_bus") : null;
 if(syncChannel){
@@ -2897,7 +2900,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.37";
+  var CURRENT_VERSION = "v2.0.38";
   if(!isOnline()) return; // NUNCA limpar cache ou desregistrar SW quando estiver offline
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
@@ -3336,9 +3339,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.37</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.38</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.37</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.38</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -4828,8 +4831,8 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.37</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 25/09/2026 (Carregamento ultra-rápido em paralelo, sem bloqueios de tela e sincronização resiliente).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.38</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 25/09/2026 (Carregamento completo de todos os tanques sem filtros ou deduplicações indevidas).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
