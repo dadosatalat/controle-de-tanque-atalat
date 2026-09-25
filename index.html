@@ -3435,9 +3435,20 @@ function renderPainel(){
     return hay.indexOf(q) !== -1;
   });
 
+function sessionFallbackBannerHtml(){
+  if(state.session && state.session.isOfflineFallback && isOnline()){
+    return '<div class="banner-warn" style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;">'+
+      '<span>🔑 Faça login com seu usuário para sincronizar todos os 161 tanques da nuvem.</span>'+
+      '<button class="btn btn-primary" style="padding:5px 12px;font-size:12px;white-space:nowrap;flex-shrink:0;" onclick="app.sair()">Entrar Agora</button>'+
+    '</div>';
+  }
+  return "";
+}
+
   var sf = state.statusFilter || "";
   var html = "";
   html += offlineBannerHtml();
+  html += sessionFallbackBannerHtml();
   html += contaPendenteHtml();
 
   html += '<div class="stats">'+
