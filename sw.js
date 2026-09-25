@@ -1,4 +1,4 @@
-const CACHE_NAME = 'atalat-tanques-v2.0.36';
+const CACHE_NAME = 'atalat-tanques-v2.0.37';
 const ASSETS = [
   './',
   './index.html',

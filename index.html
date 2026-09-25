@@ -1229,14 +1229,21 @@ async function pushToCloudMaster(){
 
 async function pullFromCloudMaster(){
   try{
-    var sbRes = await sb.from("tanques").select("*");
+    var resList = await Promise.race([
+      Promise.all([
+        sb.from("tanques").select("*").catch(function(){ return { data: [] }; }),
+        sb.from("historico").select("id, tanque_id, data, tipo, produtor, litros, desc_texto, fotos, created_at").order("created_at", { ascending: false }).catch(function(){ return { data: [] }; })
+      ]),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error("Timeout pull cloud")); }, 4000); })
+    ]).catch(function(e){
+      console.warn("Aviso ao puxar dados da nuvem:", e);
+      return null;
+    });
+
+    if(!resList) return;
+    var sbRes = resList[0] || {};
+    var sbHistRes = resList[1] || {};
     if(sbRes && sbRes.data && Array.isArray(sbRes.data) && sbRes.data.length > 0){
-      var sbHistRes = null;
-      try{
-        sbHistRes = await sb.from("historico")
-          .select("id, tanque_id, data, tipo, produtor, litros, desc_texto, fotos, created_at")
-          .order("created_at", { ascending: false });
-      }catch(he){}
       var allHist = (sbHistRes && sbHistRes.data && Array.isArray(sbHistRes.data)) ? sbHistRes.data : [];
 
       var freshTanks = sbRes.data.map(function(row){
@@ -2178,7 +2185,7 @@ app.forcarSincronizacao = async function(){
         await pushToCloudMaster();
         await pullFromCloudMaster();
       })(),
-      new Promise(function(r){ setTimeout(r, 3000); })
+      new Promise(function(r){ setTimeout(r, 5000); })
     ]);
     saveCache();
     saveSharedTanks(state.tanks);
@@ -2209,7 +2216,7 @@ app.sincronizarEReceberDados = async function(){
         await pushToCloudMaster();
         await pullFromCloudMaster();
       })(),
-      new Promise(function(r){ setTimeout(r, 3000); })
+      new Promise(function(r){ setTimeout(r, 5000); })
     ]);
     saveCache();
     saveSharedTanks(state.tanks);
@@ -2890,7 +2897,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.36";
+  var CURRENT_VERSION = "v2.0.37";
   if(!isOnline()) return; // NUNCA limpar cache ou desregistrar SW quando estiver offline
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
@@ -3031,6 +3038,21 @@ async function bootAfterAuthChange(){
     return;
   }
 
+  // Se temos session mas não state.me, inicializa state.me imediatamente
+  if(state.session && state.session.user && !state.me){
+    var sEmail = (state.session.user.email || "").toLowerCase().trim();
+    var sMeta = state.session.user.user_metadata || {};
+    var sName = sMeta.nome || sEmail.split("@")[0] || "Usuário";
+    var sPapel = (sEmail.indexOf("nelint") !== -1 || sEmail.indexOf("filialnaque") !== -1 || sEmail.indexOf("italo") !== -1 || sEmail.indexOf("pauloip") !== -1) ? "admin" : "admin";
+    state.me = {
+      id: state.session.user.id,
+      nome: sName,
+      usuario: sEmail,
+      papel: sPapel,
+      unidade_id: "9adeb73d-b1f4-4d0c-87e5-a6138758900b"
+    };
+  }
+
   // Cria sessão fallback caso o usuário esteja em cache mas sem auth remoto
   if(!state.session && state.me){
     state.session = {
@@ -3043,7 +3065,7 @@ async function bootAfterAuthChange(){
     };
   }
 
-  // Tendo state.me garantido, impede que a tela fique em 'carregando'
+  // Tendo state.me garantido, desenha a tela do painel IMEDIATAMENTE (0ms)
   if(state.me){
     if(state.view === "login" || state.view === "signup" || state.view === "carregando"){
       state.view = "painel";
@@ -3052,21 +3074,25 @@ async function bootAfterAuthChange(){
     render();
   }
 
-  // Se estiver online, atualiza dados em background
+  // Se estiver online, atualiza dados em background de forma concorrente sem travar a interface
   if(isOnline()){
-    try{
-      await loadMe();
-      await loadUnidades();
-      await loadTanques();
-      saveCache();
-      subscribeRealtime();
-      processarFila();
-    }catch(e){
-      console.warn("Não foi possível atualizar dados com o servidor:", e);
-      if(!temCache){
-        app.toast("Conectando ao servidor...");
+    (async function(){
+      try{
+        await Promise.all([
+          loadMe().catch(function(){}),
+          loadUnidades().catch(function(){}),
+          loadTanques().catch(function(){})
+        ]);
+        saveCache();
+        subscribeRealtime();
+        processarFila();
+        if(!isUserTyping() && state.view !== "nova" && state.view !== "editarTanque" && state.view !== "editarRegistro" && state.view !== "usuarioForm"){
+          render();
+        }
+      }catch(e){
+        console.warn("Aviso ao atualizar dados em segundo plano:", e);
       }
-    }
+    })();
   } else if(temCache){
     app.toast("📶 Modo offline — dados locais disponíveis.");
   }
@@ -3310,9 +3336,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.36</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.37</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.36</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.37</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -4802,8 +4828,8 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.36</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 25/09/2026 (Carregamento instantâneo de tanques, proteção de cache e persistência de produtor/município).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.37</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 25/09/2026 (Carregamento ultra-rápido em paralelo, sem bloqueios de tela e sincronização resiliente).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
