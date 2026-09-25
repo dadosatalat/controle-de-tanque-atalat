@@ -1137,8 +1137,8 @@ function sanitizeTank(t){
   if(!copy.status || copy.status === "undefined" || copy.status === "null"){
     copy.status = (copy.produtor && copy.produtor.nome) ? "em_operacao" : "estoque";
   }
-  if(!copy.local) copy.local = { municipio: "Naque - MG", latitude: "", longitude: "" };
-  if(!copy.local.municipio) copy.local.municipio = "Naque - MG";
+  if(!copy.local) copy.local = { municipio: "", latitude: "", longitude: "" };
+  if(copy.local.municipio === undefined || copy.local.municipio === null) copy.local.municipio = "";
   return copy;
 }
 
@@ -1212,7 +1212,7 @@ async function pushToCloudMaster(){
           produtor_nome: t.produtor ? (t.produtor.nome || null) : null,
           produtor_propriedade: t.produtor ? (t.produtor.propriedade || null) : null,
           unidade_id: (t.unidade_id && t.unidade_id.length === 36) ? t.unidade_id : "9adeb73d-b1f4-4d0c-87e5-a6138758900b",
-          municipio: (t.local && t.local.municipio) ? t.local.municipio : "Naque - MG",
+          municipio: (t.local && t.local.municipio !== undefined) ? t.local.municipio : null,
           latitude: (t.local && t.local.latitude) ? t.local.latitude : null,
           longitude: (t.local && t.local.longitude) ? t.local.longitude : null,
           foto: t.foto || null
@@ -1230,7 +1230,7 @@ async function pushToCloudMaster(){
 async function pullFromCloudMaster(){
   try{
     var sbRes = await sb.from("tanques").select("*");
-    if(sbRes && sbRes.data && Array.isArray(sbRes.data) && sbRes.data.length > 0){
+    if(sbRes && sbRes.data && Array.isArray(sbRes.data)){
       var sbHistRes = null;
       try{
         sbHistRes = await sb.from("historico")
@@ -1242,7 +1242,7 @@ async function pullFromCloudMaster(){
       var freshTanks = sbRes.data.map(function(row){
         var tankHist = allHist.filter(function(h){ return h.tanque_id === row.id; });
         var existingLocal = (state.tanks||[]).find(function(l){
-          return l.id === row.id || (l.serie && l.serie === row.serie);
+          return l.id === row.id || (l.serie && row.serie && String(l.serie).trim().toUpperCase() === String(row.serie).trim().toUpperCase());
         });
 
         var cloudFoto = (row.foto && typeof row.foto === "string" && row.foto.trim().length > 0 && row.foto.indexOf("logo-atalat") === -1) ? row.foto : null;
@@ -1250,6 +1250,12 @@ async function pullFromCloudMaster(){
         var finalFoto = cloudFoto || localFoto;
 
         var cloudHistItems = tankHist.map(function(h){
+          var parsedFotos = [];
+          if(Array.isArray(h.fotos)){
+            parsedFotos = h.fotos;
+          } else if(typeof h.fotos === "string"){
+            try { parsedFotos = JSON.parse(h.fotos); } catch(e){ if(h.fotos) parsedFotos = [h.fotos]; }
+          }
           return {
             id: h.id,
             data: h.data,
@@ -1257,16 +1263,17 @@ async function pullFromCloudMaster(){
             produtor: h.produtor,
             litros: h.litros,
             desc: h.desc_texto || "",
-            fotos: h.fotos || [],
-            criadoEm: h.created_at || null
+            fotos: parsedFotos,
+            criadoEm: h.created_at || null,
+            pendente: false
           };
         });
 
         var mergedHist = cloudHistItems.slice();
         if(existingLocal && Array.isArray(existingLocal.historico)){
           existingLocal.historico.forEach(function(lh){
-            if(lh){
-              var existsInCloud = mergedHist.some(function(ch){ return ch.id === lh.id || (ch.tipo === lh.tipo && ch.data === lh.data && ch.desc === lh.desc); });
+            if(lh && lh.pendente){
+              var existsInCloud = mergedHist.some(function(ch){ return ch.id === lh.id; });
               if(!existsInCloud){
                 mergedHist.unshift(lh);
               }
@@ -1274,49 +1281,82 @@ async function pullFromCloudMaster(){
           });
         }
 
+        var isLocalPending = existingLocal && (existingLocal.pendente === true || isLocalId(existingLocal.id));
+
         return {
           id: row.id,
-          serie: row.serie || "",
-          patrimonio: row.patrimonio || "",
-          capacidade: parseInt(row.capacidade, 10) || 2000,
-          status: row.status || "estoque",
-          marca: (existingLocal && existingLocal.marca) ? existingLocal.marca : (row.marca || ""),
-          ano_fabricacao: (existingLocal && existingLocal.ano_fabricacao) ? existingLocal.ano_fabricacao : (row.ano_fabricacao || null),
+          serie: (isLocalPending && existingLocal.serie) ? existingLocal.serie : (row.serie || ""),
+          patrimonio: (isLocalPending && existingLocal.patrimonio) ? existingLocal.patrimonio : (row.patrimonio || ""),
+          capacidade: (isLocalPending && existingLocal.capacidade) ? existingLocal.capacidade : (parseInt(row.capacidade, 10) || 0),
+          status: (isLocalPending && existingLocal.status) ? existingLocal.status : (row.status || "estoque"),
+          marca: (isLocalPending && existingLocal.marca) ? existingLocal.marca : (row.marca || (existingLocal ? existingLocal.marca : "")),
+          ano_fabricacao: (isLocalPending && existingLocal.ano_fabricacao) ? existingLocal.ano_fabricacao : (row.ano_fabricacao || (existingLocal ? existingLocal.ano_fabricacao : null)),
           foto: finalFoto,
-          contrato_assinado: (existingLocal && existingLocal.contrato_assinado !== undefined) ? existingLocal.contrato_assinado : (row.contrato_assinado === true || row.contrato_assinado === "sim"),
-          produtor: row.produtor_nome ? {
+          contrato_assinado: (isLocalPending && existingLocal.contrato_assinado !== undefined) ? existingLocal.contrato_assinado : (row.contrato_assinado === true || row.contrato_assinado === "sim"),
+          produtor: (isLocalPending && existingLocal.produtor !== undefined) ? existingLocal.produtor : (row.produtor_nome ? {
             nome: row.produtor_nome,
             propriedade: row.produtor_propriedade || "",
             matricula: (existingLocal && existingLocal.produtor && existingLocal.produtor.matricula) ? existingLocal.produtor.matricula : (row.produtor_matricula || "")
-          } : (existingLocal ? existingLocal.produtor : null),
-          unidade_id: row.unidade_id || "9adeb73d-b1f4-4d0c-87e5-a6138758900b",
+          } : (existingLocal ? existingLocal.produtor : null)),
+          unidade_id: (isLocalPending && existingLocal.unidade_id) ? existingLocal.unidade_id : (row.unidade_id || "9adeb73d-b1f4-4d0c-87e5-a6138758900b"),
           local: {
-            municipio: row.municipio || (existingLocal && existingLocal.local ? existingLocal.local.municipio : "Naque - MG"),
-            latitude: row.latitude || (existingLocal && existingLocal.local ? existingLocal.local.latitude : ""),
-            longitude: row.longitude || (existingLocal && existingLocal.local ? existingLocal.local.longitude : "")
+            municipio: (isLocalPending && existingLocal.local && existingLocal.local.municipio !== undefined) ? existingLocal.local.municipio : (row.municipio !== undefined && row.municipio !== null ? row.municipio : (existingLocal && existingLocal.local && existingLocal.local.municipio ? existingLocal.local.municipio : "")),
+            latitude: (isLocalPending && existingLocal.local && existingLocal.local.latitude) ? existingLocal.local.latitude : (row.latitude || (existingLocal && existingLocal.local ? existingLocal.local.latitude : "")),
+            longitude: (isLocalPending && existingLocal.local && existingLocal.local.longitude) ? existingLocal.local.longitude : (row.longitude || (existingLocal && existingLocal.local ? existingLocal.local.longitude : ""))
           },
+          pendente: isLocalPending,
           historico: mergedHist
         };
       });
 
+      // Preservar tanques locais pendentes que ainda não subiram para o cloud
+      var queue = getQueue();
+      var pendingLocalTanks = (state.tanks || []).filter(function(lt){
+        if(!lt) return false;
+        var isPending = lt.pendente === true || isLocalId(lt.id);
+        if(!isPending) return false;
+        var alreadyInFresh = freshTanks.some(function(ft){
+          return ft.id === lt.id || (ft.serie && lt.serie && String(ft.serie).trim().toUpperCase() === String(lt.serie).trim().toUpperCase());
+        });
+        return !alreadyInFresh;
+      });
+
+      var combinedTanks = freshTanks.concat(pendingLocalTanks);
+
       var delList = getDeletedTanks();
-      var activeKeys = new Set();
-      freshTanks.forEach(function(t){
-        if(t.id) activeKeys.add(String(t.id).toUpperCase().trim());
-        if(t.serie) activeKeys.add(String(t.serie).toUpperCase().trim());
-        if(t.patrimonio) activeKeys.add(String(t.patrimonio).toUpperCase().trim());
+      var queueDeletedSeries = new Set();
+      queue.forEach(function(qi){
+        if(qi && qi.kind === "excluir_tanque" && qi.payload){
+          if(qi.payload.tanqueId) queueDeletedSeries.add(String(qi.payload.tanqueId).toUpperCase().trim());
+          if(qi.payload.serie) queueDeletedSeries.add(String(qi.payload.serie).toUpperCase().trim());
+        }
+      });
+
+      var activeKeysInCloud = new Set();
+      sbRes.data.forEach(function(row){
+        if(row.id) activeKeysInCloud.add(String(row.id).toUpperCase().trim());
+        if(row.serie) activeKeysInCloud.add(String(row.serie).toUpperCase().trim());
+        if(row.patrimonio) activeKeysInCloud.add(String(row.patrimonio).toUpperCase().trim());
       });
 
       var cleanedDelList = delList.filter(function(d){
-        return !activeKeys.has(String(d).toUpperCase().trim());
+        var dUpper = String(d).toUpperCase().trim();
+        if(queueDeletedSeries.has(dUpper)) return true;
+        return activeKeysInCloud.has(dUpper);
       });
       try{ localStorage.setItem(DELETED_TANKS_KEY, JSON.stringify(cleanedDelList)); }catch(e){}
 
-      state.tanks = dedupeTanks(freshTanks).filter(function(t){ return !isTankDeleted(t, cleanedDelList); });
+      var finalTanks = dedupeTanks(combinedTanks).filter(function(t){
+        return !isTankDeleted(t, cleanedDelList);
+      });
+
+      state.tanks = finalTanks;
       saveSharedTanks(state.tanks);
       saveCache();
     }
-  }catch(e){}
+  }catch(e){
+    console.warn("Aviso ao puxar dados da nuvem:", e);
+  }
 }
 
 var syncChannel = (typeof BroadcastChannel !== "undefined") ? new BroadcastChannel("atalat_sync_bus") : null;
@@ -2302,36 +2342,88 @@ async function aplicarItemRemoto(item){
       } catch(eExist) {}
     }
 
+    var targetStatus = p.status || (p.produtorNome ? "em_operacao" : "estoque");
+    var isContrato = (p.contratoAssinado === "sim" || p.contratoAssinado === true);
+
     if(!novoId){
-      var insertRes = await sb.from("tanques").insert({
+      var tankRowToInsert = {
         serie: p.serie ? String(p.serie).trim() : "SN-"+Date.now(),
         patrimonio: p.patrimonio || null,
         capacidade: p.capacidade || 0,
         marca: p.marca || null,
         ano_fabricacao: p.ano_fabricacao ? parseInt(p.ano_fabricacao) : null,
-        status: "estoque",
+        status: targetStatus,
         unidade_id: dbUnidUuid,
-        municipio: p.municipio || null,
+        municipio: (p.municipio !== undefined && p.municipio !== null && String(p.municipio).trim() !== "") ? String(p.municipio).trim() : null,
         latitude: p.latitude || null,
-        longitude: p.longitude || null
-      }).select().single();
-      if(insertRes.error) throw insertRes.error;
-      novoId = insertRes.data.id;
+        longitude: p.longitude || null,
+        produtor_nome: p.produtorNome ? String(p.produtorNome).trim() : null,
+        produtor_propriedade: p.produtorProp ? String(p.produtorProp).trim() : null,
+        produtor_matricula: p.produtorMatricula ? String(p.produtorMatricula).trim() : null,
+        contrato_assinado: isContrato
+      };
+
+      var insertRes = await sb.from("tanques").insert(tankRowToInsert).select().single();
+      if(insertRes.error){
+        // Fallback para schema sem colunas opcionais
+        var fallbackRow = {
+          serie: p.serie ? String(p.serie).trim() : "SN-"+Date.now(),
+          patrimonio: p.patrimonio || null,
+          capacidade: p.capacidade || 0,
+          status: targetStatus,
+          unidade_id: dbUnidUuid,
+          municipio: (p.municipio !== undefined && p.municipio !== null && String(p.municipio).trim() !== "") ? String(p.municipio).trim() : null,
+          latitude: p.latitude || null,
+          longitude: p.longitude || null,
+          produtor_nome: p.produtorNome ? String(p.produtorNome).trim() : null,
+          produtor_propriedade: p.produtorProp ? String(p.produtorProp).trim() : null
+        };
+        var fallbackInsert = await sb.from("tanques").insert(fallbackRow).select().single();
+        if(fallbackInsert.error) throw fallbackInsert.error;
+        novoId = fallbackInsert.data.id;
+      } else {
+        novoId = insertRes.data.id;
+      }
+    } else {
+      // Se já existia, atualizar campos
+      try {
+        await sb.from("tanques").update({
+          patrimonio: p.patrimonio || null,
+          capacidade: p.capacidade || 0,
+          marca: p.marca || null,
+          ano_fabricacao: p.ano_fabricacao ? parseInt(p.ano_fabricacao) : null,
+          status: targetStatus,
+          unidade_id: dbUnidUuid,
+          municipio: (p.municipio !== undefined && p.municipio !== null && String(p.municipio).trim() !== "") ? String(p.municipio).trim() : null,
+          latitude: p.latitude || null,
+          longitude: p.longitude || null,
+          produtor_nome: p.produtorNome ? String(p.produtorNome).trim() : null,
+          produtor_propriedade: p.produtorProp ? String(p.produtorProp).trim() : null,
+          produtor_matricula: p.produtorMatricula ? String(p.produtorMatricula).trim() : null,
+          contrato_assinado: isContrato
+        }).eq("id", novoId);
+      } catch(eUpd) {
+        try {
+          await sb.from("tanques").update({
+            produtor_nome: p.produtorNome ? String(p.produtorNome).trim() : null,
+            produtor_propriedade: p.produtorProp ? String(p.produtorProp).trim() : null,
+            status: targetStatus,
+            municipio: (p.municipio !== undefined && p.municipio !== null && String(p.municipio).trim() !== "") ? String(p.municipio).trim() : null
+          }).eq("id", novoId);
+        } catch(eUpd2) {}
+      }
     }
 
-    if(p.produtorNome){
-      try {
-        await sb.from("tanques").update({produtor_nome: p.produtorNome, produtor_propriedade: p.produtorProp || null}).eq("id", novoId);
-      } catch(eUpd) {}
-    }
+    var histTipo = p.tipo || (p.produtorNome ? "Instalação" : "Cadastro");
+    var histDesc = p.desc || (p.produtorNome ? ("Tanque cadastrado e instalado no produtor " + p.produtorNome) : "Tanque cadastrado em estoque");
 
     var histRes = await sb.from("historico").insert({
       tanque_id: novoId,
       data: p.data || new Date().toISOString().slice(0,10),
-      tipo: p.tipo || "Visita Inicial",
+      tipo: histTipo,
       produtor: p.produtorNome || "—",
       litros: p.capacidade || 0,
-      desc_texto: p.desc || "(sem observações)",
+      desc_texto: histDesc,
       fotos: []
     }).select().single();
     if(histRes.error) throw histRes.error;
@@ -2693,11 +2785,15 @@ function unsubscribeRealtime(){
   if(realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
 }
 function handleRealtimeChange(){
+  if(sincronizando) return;
   clearTimeout(realtimeDebounce);
   realtimeDebounce = setTimeout(async function(){
-    await loadTanques();
-    render();
-  }, 350);
+    if(sincronizando) return;
+    await pullFromCloudMaster();
+    if(!isUserTyping() && state.view !== "nova" && state.view !== "editarTanque" && state.view !== "editarRegistro" && state.view !== "usuarioForm"){
+      render();
+    }
+  }, 400);
 }
 
 function applyTheme(theme){
@@ -2767,7 +2863,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.34";
+  var CURRENT_VERSION = "v2.0.35";
   if(!isOnline()) return; // NUNCA limpar cache ou desregistrar SW quando estiver offline
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
@@ -3168,9 +3264,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.34</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.35</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.34</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.35</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3545,15 +3641,14 @@ function tankOptionsHtml(filtro){
 }
 
 function renderNova(){
-  document.getElementById("topTitle").textContent = "Nova visita";
-  document.getElementById("topSub").textContent = "Registro de campo";
+  var isNovo = novaForm.tankId === "__novo__";
+  document.getElementById("topTitle").textContent = isNovo ? "Cadastrar novo tanque" : "Nova visita";
+  document.getElementById("topSub").textContent = isNovo ? "Cadastro de equipamento e destino" : "Registro de campo";
 
   if(!hasPerm("criar")){
     document.getElementById("screen").innerHTML = '<div class="empty">Seu usuário não tem permissão para criar registros.</div>';
     return;
   }
-
-  var isNovo = novaForm.tankId === "__novo__";
 
   var html = '';
   html += '<div class="field"><label>Tanque</label>'+
@@ -3562,6 +3657,7 @@ function renderNova(){
   '</div>';
 
   if(isNovo){
+    html += '<div class="section-title">Identificação do novo tanque</div>';
     html += '<div class="field"><label>Número de série</label><div class="input-prefix-wrap"><span class="input-prefix">TQ-</span><input id="f_serie" inputmode="numeric" value="'+esc(cleanSerieNum(novaForm.serie))+'" oninput="app.syncField(\'serie\',this.value)" placeholder="2301"/></div></div>';
     html += '<div class="field"><label>Número de patrimônio</label><div class="input-prefix-wrap"><span class="input-prefix">PAT-</span><input id="f_patrimonio" inputmode="numeric" value="'+esc(cleanPatrimonioNum(novaForm.patrimonio))+'" oninput="app.syncField(\'patrimonio\',this.value)" placeholder="0512"/></div></div>';
     html += '<div class="field"><label>Marca do tanque</label><input id="f_marca" value="'+esc(novaForm.marca||"")+'" oninput="app.syncField(\'marca\',this.value)" placeholder="Ex: Westfalia, Reafrio, Plaszom..."/></div>';
@@ -3573,7 +3669,15 @@ function renderNova(){
         state.unidades.map(function(u){ return '<option value="'+u.id+'" '+(novaForm.unidadeId===u.id?'selected':'')+'>'+esc(u.nome)+'</option>'; }).join('')+
       '</select></div>';
     }
-    html += '<div class="banner-info no-print">Esse tanque será cadastrado como <strong>Em estoque</strong>, sem produtor. Depois, selecione-o aqui novamente e use o tipo "Instalação" (ou o botão "Vincular produtor" na tela do tanque) para vinculá-lo a um produtor.</div>';
+    html += '<div class="section-title">Produtor / Propriedade (Opcional)</div>';
+    html += '<div class="banner-info no-print" style="margin-bottom:12px;">💡 Se este tanque já estiver sendo entregue/instalado em um produtor, preencha o nome abaixo e ele ficará <strong>Em operação</strong>. Se deixar em branco, o tanque entrará no <strong>Estoque</strong>.</div>';
+    html += '<div class="field"><label>Matrícula do produtor (opcional, ex: 01/45)</label><input id="f_prodmatricula" value="'+esc(novaForm.produtorMatricula)+'" oninput="app.syncField(\'produtorMatricula\',this.value)" placeholder="Ex: 01/45"/></div>';
+    html += '<div class="field"><label>Nome do produtor</label><input id="f_prodnome" value="'+esc(novaForm.produtorNome)+'" oninput="app.syncField(\'produtorNome\',this.value)" placeholder="Deixe em branco se o tanque for para o Estoque"/></div>';
+    html += '<div class="field"><label>Propriedade</label><input id="f_prodprop" value="'+esc(novaForm.produtorProp)+'" oninput="app.syncField(\'produtorProp\',this.value)" placeholder="Ex: Sítio Boa Vista"/></div>';
+    html += '<div class="field"><label>Contrato de comodato assinado?</label><select id="f_contrato_assinado" onchange="app.syncField(\'contratoAssinado\',this.value)">'+
+      '<option value="nao" '+(novaForm.contratoAssinado==="nao"?'selected':'')+'>Não (Pendente)</option>'+
+      '<option value="sim" '+(novaForm.contratoAssinado==="sim"?'selected':'')+'>Sim (Assinado)</option>'+
+    '</select></div>';
   } else {
     html += '<div class="section-title">Tipo de registro</div>';
     html += '<div class="field"><select id="f_tipo" onchange="app.onTipoChange(this.value)">'+
@@ -3601,11 +3705,7 @@ function renderNova(){
         '</select></div>';
       }
     }
-  }
 
-  html += '<div class="field"><label>Data</label><input id="f_data" type="date" value="'+novaForm.data+'" onchange="app.syncField(\'data\',this.value)"/></div>';
-
-  if(!isNovo){
     html += '<div class="section-title">Produtor / propriedade</div>';
     html += '<div class="field"><label>Matrícula do produtor (opcional, ex: 01/45)</label><input id="f_prodmatricula" value="'+esc(novaForm.produtorMatricula)+'" oninput="app.syncField(\'produtorMatricula\',this.value)" placeholder="Ex: 01/45"/></div>';
     html += '<div class="field"><label>Nome do produtor</label><input id="f_prodnome" value="'+esc(novaForm.produtorNome)+'" oninput="app.syncField(\'produtorNome\',this.value)" placeholder="Nome completo"/></div>';
@@ -3617,14 +3717,17 @@ function renderNova(){
         '<option value="sim" '+(novaForm.contratoAssinado==="sim"?'selected':'')+'>Sim (Assinado)</option>'+
       '</select></div>';
     }
-
-    html += '<div class="field"><label>Município</label><input id="f_municipio" value="'+esc(novaForm.municipio)+'" oninput="app.syncField(\'municipio\',this.value)" placeholder="Cidade - UF"/></div>';
-    html += '<div class="loc-row">'+
-      '<div class="field"><label>Latitude</label><input id="f_lat" type="number" step="any" value="'+esc(String(novaForm.latitude||""))+'" oninput="app.syncField(\'latitude\',this.value)" placeholder="-18.123456"/></div>'+
-      '<div class="field"><label>Longitude</label><input id="f_lng" type="number" step="any" value="'+esc(String(novaForm.longitude||""))+'" oninput="app.syncField(\'longitude\',this.value)" placeholder="-41.123456"/></div>'+
-    '</div>';
-    html += '<button type="button" class="btn btn-loc no-print" onclick="app.usarLocalizacao(\'f_lat\',\'f_lng\')">Usar minha localização atual (GPS)</button>';
   }
+
+  html += '<div class="section-title">Localização</div>';
+  html += '<div class="field"><label>Município</label><input id="f_municipio" value="'+esc(novaForm.municipio)+'" oninput="app.syncField(\'municipio\',this.value)" placeholder="Cidade - UF (Ex: Naque - MG, Belo Oriente - MG...)"/></div>';
+  html += '<div class="loc-row">'+
+    '<div class="field"><label>Latitude</label><input id="f_lat" type="number" step="any" value="'+esc(String(novaForm.latitude||""))+'" oninput="app.syncField(\'latitude\',this.value)" placeholder="-18.123456"/></div>'+
+    '<div class="field"><label>Longitude</label><input id="f_lng" type="number" step="any" value="'+esc(String(novaForm.longitude||""))+'" oninput="app.syncField(\'longitude\',this.value)" placeholder="-41.123456"/></div>'+
+  '</div>';
+  html += '<button type="button" class="btn btn-loc no-print" onclick="app.usarLocalizacao(\'f_lat\',\'f_lng\')">Usar minha localização atual (GPS)</button>';
+
+  html += '<div class="field" style="margin-top:14px;"><label>Data</label><input id="f_data" type="date" value="'+novaForm.data+'" onchange="app.syncField(\'data\',this.value)"/></div>';
 
   html += '<div class="section-title">Fotos</div>';
   html += photoSlot(novaForm.fotos, 'geral', 'Foto geral do tanque');
@@ -3635,7 +3738,7 @@ function renderNova(){
   html += '<div class="section-title">Observações</div>';
   html += '<div class="field"><textarea id="f_desc" oninput="app.syncField(\'desc\',this.value)" placeholder="Estado do tanque, ocorrências, pendências...">'+esc(novaForm.desc)+'</textarea></div>';
 
-  html += '<button class="btn btn-primary" style="margin-top:18px;" onclick="app.salvarVisita()">Salvar registro</button>';
+  html += '<button class="btn btn-primary" style="margin-top:18px;" onclick="app.salvarVisita()">'+(isNovo ? "Cadastrar tanque" : "Salvar registro")+'</button>';
 
   document.getElementById("screen").innerHTML = html;
 }
@@ -3644,13 +3747,20 @@ app.onTankSelect = function(id){
   novaForm.tankId = id;
   if(id !== "__novo__"){
     var t = findTank(id);
-    novaForm.produtorNome = t.produtor ? t.produtor.nome : "";
-    novaForm.produtorProp = t.produtor ? t.produtor.propriedade : "";
-    novaForm.produtorMatricula = t.produtor ? (t.produtor.matricula || "") : "";
-    novaForm.contratoAssinado = t.contrato_assinado ? "sim" : "nao";
-    novaForm.municipio = t.local.municipio;
-    novaForm.latitude = t.local.latitude;
-    novaForm.longitude = t.local.longitude;
+    if(t){
+      novaForm.produtorNome = t.produtor ? (t.produtor.nome || "") : "";
+      novaForm.produtorProp = t.produtor ? (t.produtor.propriedade || "") : "";
+      novaForm.produtorMatricula = t.produtor ? (t.produtor.matricula || "") : "";
+      novaForm.contratoAssinado = t.contrato_assinado ? "sim" : "nao";
+      novaForm.municipio = (t.local && t.local.municipio) ? t.local.municipio : "";
+      novaForm.latitude = (t.local && t.local.latitude) ? t.local.latitude : "";
+      novaForm.longitude = (t.local && t.local.longitude) ? t.local.longitude : "";
+    }
+  } else {
+    var keepData = novaForm.data || todayISO();
+    novaForm = novoFormVazio();
+    novaForm.tankId = "__novo__";
+    novaForm.data = keepData;
   }
   renderNova();
 };
@@ -3672,9 +3782,9 @@ app.vincularProdutor = function(tankId){
   novaForm.tankId = tankId;
   var t = findTank(tankId);
   if(t){
-    novaForm.municipio = t.local.municipio || "";
-    novaForm.latitude = t.local.latitude || "";
-    novaForm.longitude = t.local.longitude || "";
+    novaForm.municipio = (t.local && t.local.municipio) ? t.local.municipio : "";
+    novaForm.latitude = (t.local && t.local.latitude) ? t.local.latitude : "";
+    novaForm.longitude = (t.local && t.local.longitude) ? t.local.longitude : "";
   }
   novaForm.tipo = "Instalação";
   app.goto("nova");
@@ -3693,10 +3803,10 @@ app.salvarVisita = async function(){
   if(!hasPerm("criar")){ app.toast("Seu usuário não tem permissão para criar registros."); return; }
   clearInvalid();
 
-  var isNovoSubmit = novaForm.tankId === "__novo__";
   var selTankEl = document.getElementById("f_tank");
   if(selTankEl && selTankEl.value) novaForm.tankId = selTankEl.value;
-  isNovoSubmit = novaForm.tankId === "__novo__";
+  var isNovoSubmit = novaForm.tankId === "__novo__";
+  
   var tipoEl = document.getElementById("f_tipo");
   novaForm.tipo = isNovoSubmit ? "Cadastro" : (tipoEl ? tipoEl.value : novaForm.tipo);
   var dataEl = document.getElementById("f_data");
@@ -3708,6 +3818,9 @@ app.salvarVisita = async function(){
   novaForm.produtorProp = prodpropEl ? (prodpropEl.value||"").trim() : "";
   var prodmatEl = document.getElementById("f_prodmatricula");
   novaForm.produtorMatricula = prodmatEl ? (prodmatEl.value||"").trim() : "";
+  var contrEl = document.getElementById("f_contrato_assinado");
+  if(contrEl) novaForm.contratoAssinado = contrEl.value;
+
   var municipioEl = document.getElementById("f_municipio");
   novaForm.municipio = municipioEl ? (municipioEl.value||"").trim() : "";
   var latEl = document.getElementById("f_lat");
@@ -3780,26 +3893,32 @@ app.salvarVisita = async function(){
       return;
     }
 
+    var temProdutor = Boolean(novaForm.produtorNome);
+    var statusNovo = temProdutor ? "em_operacao" : "estoque";
+    var tipoHistNovo = temProdutor ? "Instalação" : "Cadastro";
+    var descHistNovo = novaForm.desc || (temProdutor ? ("Tanque cadastrado e instalado no produtor " + novaForm.produtorNome) : "Tanque cadastrado em estoque");
+    var contratoAssinadoBool = temProdutor ? (novaForm.contratoAssinado === "sim") : false;
+
     var novoTank = {
       id: targetId,
       serie: serie,
       patrimonio: patrimonio,
       capacidade: capacidade||0,
-      status: "estoque",
+      status: statusNovo,
       marca: novaForm.marca || "",
       ano_fabricacao: novaForm.ano_fabricacao ? (parseInt(novaForm.ano_fabricacao, 10) || null) : null,
-      produtor: novaForm.produtorNome ? {nome: novaForm.produtorNome, propriedade: novaForm.produtorProp||"", matricula: novaForm.produtorMatricula||""} : null,
-      local: {latitude: novaForm.latitude||null, longitude: novaForm.longitude||null, municipio: novaForm.municipio||"Naque - MG"},
+      produtor: temProdutor ? {nome: novaForm.produtorNome, propriedade: novaForm.produtorProp||"", matricula: novaForm.produtorMatricula||""} : null,
+      local: {latitude: novaForm.latitude||null, longitude: novaForm.longitude||null, municipio: novaForm.municipio||""},
       foto: (novaForm.fotos && (novaForm.fotos.geral || novaForm.fotos.abrigo)) ? (novaForm.fotos.geral || novaForm.fotos.abrigo) : null,
       unidade_id: unidadeId,
-      contrato_assinado: (novaForm.contratoAssinado === "sim"),
+      contrato_assinado: contratoAssinadoBool,
       historico: [{
         id: localId("hist"),
         data: novaForm.data,
-        tipo: novaForm.tipo,
+        tipo: tipoHistNovo,
         produtor: novaForm.produtorNome || "—",
         litros: capacidade||0,
-        desc: novaForm.desc || "(sem observações)",
+        desc: descHistNovo,
         fotos: Object.keys(novaForm.fotos||{}).map(function(k){return novaForm.fotos[k];}).filter(Boolean),
         criadoEm: new Date().toISOString()
       }]
@@ -3820,7 +3939,7 @@ app.salvarVisita = async function(){
       }
     }
     if(!tExist.local) tExist.local = {};
-    if(novaForm.municipio) tExist.local.municipio = novaForm.municipio;
+    if(novaForm.municipio !== undefined) tExist.local.municipio = novaForm.municipio;
     if(novaForm.latitude) tExist.local.latitude = novaForm.latitude;
     if(novaForm.longitude) tExist.local.longitude = novaForm.longitude;
 
@@ -3870,11 +3989,17 @@ app.salvarVisita = async function(){
       tanqueIdLocal: targetId,
       serie: serie, patrimonio: patrimonio, capacidade: capacidade || 0,
       marca: novaForm.marca || "", ano_fabricacao: novaForm.ano_fabricacao || null,
-      unidadeId: unidadeId, municipio: novaForm.municipio || "Naque - MG",
+      unidadeId: unidadeId,
+      municipio: novaForm.municipio || "",
       latitude: novaForm.latitude || null, longitude: novaForm.longitude || null,
-      produtorNome: novaForm.produtorNome || "", produtorProp: novaForm.produtorProp || "",
-      data: novaForm.data, tipo: novaForm.tipo,
-      desc: novaForm.desc || "(sem observações)",
+      status: statusNovo,
+      produtorNome: novaForm.produtorNome || "",
+      produtorProp: novaForm.produtorProp || "",
+      produtorMatricula: novaForm.produtorMatricula || "",
+      contratoAssinado: novaForm.contratoAssinado || "nao",
+      data: novaForm.data,
+      tipo: tipoHistNovo,
+      desc: descHistNovo,
       fotosBase64: fotosBase64
     });
   } else {
@@ -3887,8 +4012,10 @@ app.salvarVisita = async function(){
       status: String(tExist.status || "estoque").trim(),
       produtor_nome: tExist.produtor ? (tExist.produtor.nome || null) : null,
       produtor_propriedade: tExist.produtor ? (tExist.produtor.propriedade || null) : null,
+      produtor_matricula: tExist.produtor ? (tExist.produtor.matricula || null) : null,
+      contrato_assinado: tExist.contrato_assinado === true,
       unidade_id: (tExist.unidade_id && tExist.unidade_id.length === 36) ? tExist.unidade_id : "9adeb73d-b1f4-4d0c-87e5-a6138758900b",
-      municipio: (tExist.local && tExist.local.municipio) ? tExist.local.municipio : "Naque - MG",
+      municipio: (tExist.local && tExist.local.municipio !== undefined) ? tExist.local.municipio : "",
       latitude: (tExist.local && tExist.local.latitude) ? tExist.local.latitude : null,
       longitude: (tExist.local && tExist.local.longitude) ? tExist.local.longitude : null
     };
@@ -3964,7 +4091,7 @@ app.editarTanque = function(id){
     produtorNome: t.produtor ? (t.produtor.nome || "") : "",
     produtorProp: t.produtor ? (t.produtor.propriedade || "") : "",
     contratoAssinado: t.contrato_assinado ? "sim" : "nao",
-    municipio: (t.local && t.local.municipio) ? t.local.municipio : "Naque - MG",
+    municipio: (t.local && t.local.municipio !== undefined) ? t.local.municipio : "",
     latitude: (t.local && t.local.latitude) ? t.local.latitude : "",
     longitude: (t.local && t.local.longitude) ? t.local.longitude : "",
     foto: t.foto || null,
@@ -4005,7 +4132,7 @@ function renderEditarTanque(){
     html += '<button type="button" class="btn btn-ghost no-print" style="margin-bottom:14px;padding:8px 12px;font-size:12px;color:var(--warn);border:1px solid var(--warn);background:transparent;" onclick="app.desvincularProdutorEdit()">❌ Desvincular Produtor (Devolver ao Estoque)</button>';
   }
 
-  html += '<div class="field"><label>Município</label><input id="e_municipio" value="'+esc(editTankForm.municipio)+'"/></div>';
+  html += '<div class="field"><label>Município</label><input id="e_municipio" value="'+esc(editTankForm.municipio)+'" placeholder="Cidade - UF"/></div>';
   html += '<div class="loc-row">'+
     '<div class="field"><label>Latitude</label><input id="e_lat" type="number" step="any" value="'+esc(String(editTankForm.latitude||""))+'"/></div>'+
     '<div class="field"><label>Longitude</label><input id="e_lng" type="number" step="any" value="'+esc(String(editTankForm.longitude||""))+'"/></div>'+
@@ -4077,7 +4204,6 @@ app.salvarEdicaoTanque = async function(){
   var invalid = false;
   if(!rawSerie){ markInvalid("e_serie", "Informe o número de série."); invalid = true; }
   if(!rawPatrimonio){ markInvalid("e_patrimonio", "Informe o número de patrimônio."); invalid = true; }
-  if(!municipio){ markInvalid("e_municipio", "Informe o município."); invalid = true; }
   if(invalid) return;
 
   var btnSave = document.getElementById("btnSalvarEdicao");
@@ -4139,7 +4265,7 @@ app.salvarEdicaoTanque = async function(){
   }
 
   if(!t.local) t.local = {};
-  t.local.municipio = municipio || t.local.municipio || "Naque - MG";
+  t.local.municipio = municipio !== undefined ? municipio : (t.local.municipio || "");
   t.local.latitude = latitude || t.local.latitude || null;
   t.local.longitude = longitude || t.local.longitude || null;
 
@@ -4188,8 +4314,10 @@ app.salvarEdicaoTanque = async function(){
         ano_fabricacao: t.ano_fabricacao || null,
         produtor_nome: t.produtor ? (t.produtor.nome || null) : null,
         produtor_propriedade: t.produtor ? (t.produtor.propriedade || null) : null,
+        produtor_matricula: t.produtor ? (t.produtor.matricula || null) : null,
+        contrato_assinado: t.contrato_assinado === true,
         unidade_id: (unidadeId && unidadeId.length === 36) ? unidadeId : "9adeb73d-b1f4-4d0c-87e5-a6138758900b",
-        municipio: t.local.municipio,
+        municipio: (t.local && t.local.municipio !== undefined) ? t.local.municipio : null,
         latitude: t.local.latitude || null,
         longitude: t.local.longitude || null,
         foto: t.foto || null
@@ -4628,8 +4756,8 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.34</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 21/09/2026 (Versão atualizada para validação e sincronização segura).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.35</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 25/09/2026 (Sincronização inteligente sem perda de dados, cadastro unificado de produtor e município).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
