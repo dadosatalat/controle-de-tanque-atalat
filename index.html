@@ -1230,7 +1230,7 @@ async function pushToCloudMaster(){
 async function pullFromCloudMaster(){
   try{
     var sbRes = await sb.from("tanques").select("*");
-    if(sbRes && sbRes.data && Array.isArray(sbRes.data)){
+    if(sbRes && sbRes.data && Array.isArray(sbRes.data) && sbRes.data.length > 0){
       var sbHistRes = null;
       try{
         sbHistRes = await sb.from("historico")
@@ -1350,9 +1350,28 @@ async function pullFromCloudMaster(){
         return !isTankDeleted(t, cleanedDelList);
       });
 
-      state.tanks = finalTanks;
-      saveSharedTanks(state.tanks);
-      saveCache();
+      if(finalTanks.length > 0){
+        state.tanks = finalTanks;
+        saveSharedTanks(state.tanks);
+        saveCache();
+      }
+    } else {
+      // Quando a nuvem retorna 0 registros (ex: RLS ou nova base): NUNCA zera o cache local!
+      if(!state.tanks || state.tanks.length === 0){
+        var sharedT = getSharedTanks();
+        if(Array.isArray(sharedT) && sharedT.length > 0){
+          state.tanks = dedupeTanks(sharedT);
+        } else {
+          var diskC = loadCacheFromDisk();
+          if(diskC && Array.isArray(diskC.tanks) && diskC.tanks.length > 0){
+            state.tanks = dedupeTanks(diskC.tanks);
+          } else {
+            state.tanks = dedupeTanks(INITIAL_SEED_TANKS);
+          }
+        }
+        saveSharedTanks(state.tanks);
+        saveCache();
+      }
     }
   }catch(e){
     console.warn("Aviso ao puxar dados da nuvem:", e);
@@ -2711,8 +2730,16 @@ async function loadTanques(){
   if(Array.isArray(shared) && shared.length > 0){
     state.tanks = dedupeTanks(shared);
   } else {
-    state.tanks = dedupeTanks(INITIAL_SEED_TANKS);
+    var disk = loadCacheFromDisk();
+    if(disk && Array.isArray(disk.tanks) && disk.tanks.length > 0){
+      state.tanks = dedupeTanks(disk.tanks);
+    } else {
+      state.tanks = dedupeTanks(INITIAL_SEED_TANKS);
+    }
   }
+
+  // Renderiza imediatamente com dados em cache local sem atraso
+  render();
 
   try {
     await pullFromCloudMaster();
@@ -2863,7 +2890,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.35";
+  var CURRENT_VERSION = "v2.0.36";
   if(!isOnline()) return; // NUNCA limpar cache ou desregistrar SW quando estiver offline
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
@@ -2911,6 +2938,15 @@ async function init(){
     if(cache.unidades && cache.unidades.length) state.unidades = sanitizeUnidades(cache.unidades);
     if(cache.tanks && cache.tanks.length) state.tanks = cache.tanks;
     if(cache.profiles && cache.profiles.length) state.profiles = cache.profiles;
+  }
+
+  if(!state.tanks || state.tanks.length === 0){
+    var sharedInit = getSharedTanks();
+    if(Array.isArray(sharedInit) && sharedInit.length > 0){
+      state.tanks = dedupeTanks(sharedInit);
+    } else {
+      state.tanks = dedupeTanks(INITIAL_SEED_TANKS);
+    }
   }
 
   // 2. Se já possui usuário autenticado em cache prévio, renderiza o painel na hora (0ms de atraso)
@@ -2973,6 +3009,16 @@ async function bootAfterAuthChange(){
       temCache = true;
     }
     if(cache.profiles && cache.profiles.length) state.profiles = cache.profiles;
+  }
+
+  if(!state.tanks || state.tanks.length === 0){
+    var sharedBoot = getSharedTanks();
+    if(Array.isArray(sharedBoot) && sharedBoot.length > 0){
+      state.tanks = dedupeTanks(sharedBoot);
+      temCache = true;
+    } else {
+      state.tanks = dedupeTanks(INITIAL_SEED_TANKS);
+    }
   }
 
   // Se não há sessão e nem usuário prévio em cache, direciona para login
@@ -3264,9 +3310,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.35</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.36</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.35</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.36</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -4756,8 +4802,8 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.35</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 25/09/2026 (Sincronização inteligente sem perda de dados, cadastro unificado de produtor e município).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.36</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 25/09/2026 (Carregamento instantâneo de tanques, proteção de cache e persistência de produtor/município).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
