@@ -1254,8 +1254,8 @@ async function pullFromCloudMaster(){
   try{
     var resList = await Promise.race([
       Promise.all([
-        sb.from("tanques").select("*").range(0, 4999).catch(function(){ return { data: [] }; }),
-        sb.from("historico").select("id, tanque_id, data, tipo, produtor, litros, desc_texto, fotos, created_at").order("created_at", { ascending: false }).range(0, 9999).catch(function(){ return { data: [] }; })
+        sb.from("tanques").select("id, serie, patrimonio, capacidade, status, marca, ano_fabricacao, produtor_nome, produtor_propriedade, produtor_matricula, unidade_id, municipio, latitude, longitude, contrato_assinado, created_at, updated_at").range(0, 4999).catch(function(){ return { data: [] }; }),
+        sb.from("historico").select("id, tanque_id, data, tipo, produtor, litros, desc_texto, created_at").order("created_at", { ascending: false }).range(0, 9999).catch(function(){ return { data: [] }; })
       ]),
       new Promise(function(_, reject){ setTimeout(function(){ reject(new Error("Timeout pull cloud")); }, 10000); })
     ]).catch(function(e){
@@ -1280,12 +1280,13 @@ async function pullFromCloudMaster(){
         var finalFoto = cloudFoto || localFoto;
 
         var cloudHistItems = tankHist.map(function(h){
-          var parsedFotos = [];
-          if(Array.isArray(h.fotos)){
-            parsedFotos = h.fotos;
-          } else if(typeof h.fotos === "string"){
-            try { parsedFotos = JSON.parse(h.fotos); } catch(e){ if(h.fotos) parsedFotos = [h.fotos]; }
-          }
+          // fotos não vêm na sincronização em lote (economiza banda); são carregadas
+          // sob demanda ao abrir o tanque (app.carregarFotosDoTanque). Preserva o que
+          // já foi carregado localmente nesta sessão para não sumir a cada sync.
+          var localHistItem = (existingLocal && Array.isArray(existingLocal.historico))
+            ? existingLocal.historico.find(function(lh){ return lh && lh.id === h.id; })
+            : null;
+          var parsedFotos = (localHistItem && Array.isArray(localHistItem.fotos)) ? localHistItem.fotos : [];
           return {
             id: h.id,
             data: h.data,
@@ -2917,7 +2918,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.41";
+  var CURRENT_VERSION = "v2.0.42";
   if(!isOnline()) return; // NUNCA limpar cache ou desregistrar SW quando estiver offline
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
@@ -3337,9 +3338,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.41</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.42</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.41</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.42</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -4788,7 +4789,7 @@ function renderRelatorio(){
   document.getElementById("screen").innerHTML = html;
   refocusRelBusca();
 }
-app.onRelSelect = function(id){ relSelected = id || null; relFilter = {tipo:"", de:"", ate:""}; renderRelatorio(); };
+app.onRelSelect = function(id){ relSelected = id || null; relFilter = {tipo:"", de:"", ate:""}; renderRelatorio(); if(id) app.carregarFotosDoTanque(id); };
 app.onRelBusca = function(v){ relBusca = v; renderRelatorio(); };
 app.onRelFilter = function(field, value){ relFilter[field] = value; renderRelatorio(); };
 
@@ -4840,7 +4841,7 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.41</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.42</div>'+
     '<div class="note" style="margin-top:4px;">Atualizado em 25/09/2026 (Sincronização autenticada dos 161 tanques da nuvem).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
@@ -5186,6 +5187,38 @@ app.openTank = function(id){
   document.querySelectorAll("#navbar button").forEach(function(b){b.classList.remove("active");});
   syncNavbar();
   render();
+  app.carregarFotosDoTanque(id);
+};
+
+app.carregarFotosDoTanque = async function(id){
+  var t = findTank(id);
+  if(!t || t._fotosCarregadas || isLocalId(id)) return;
+  if(!isOnline()) return;
+  try{
+    var resT = await sb.from("tanques").select("foto").eq("id", id).maybeSingle();
+    if(resT && resT.data && resT.data.foto) t.foto = resT.data.foto;
+
+    var resH = await sb.from("historico").select("id, fotos").eq("tanque_id", id);
+    if(resH && resH.data && Array.isArray(resH.data)){
+      var fotosById = {};
+      resH.data.forEach(function(h){
+        var parsed = [];
+        if(Array.isArray(h.fotos)) parsed = h.fotos;
+        else if(typeof h.fotos === "string"){ try{ parsed = JSON.parse(h.fotos); }catch(e){ if(h.fotos) parsed = [h.fotos]; } }
+        fotosById[h.id] = parsed;
+      });
+      (t.historico||[]).forEach(function(h){
+        if(fotosById[h.id] !== undefined) h.fotos = fotosById[h.id];
+      });
+    }
+
+    t._fotosCarregadas = true;
+    saveCache();
+    saveSharedTanks(state.tanks);
+    if((state.view === "detalhe" && state.selected === id) || (state.view === "relatorio" && relSelected === id)) render();
+  }catch(e){
+    console.warn("Falha ao carregar fotos do tanque:", e);
+  }
 };
 
 function render(){
