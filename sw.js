@@ -1,9 +1,10 @@
-const CACHE_NAME = 'atalat-tanques-v2.0.44';
+const CACHE_NAME = 'atalat-tanques-v2.0.45';
 const ASSETS = [
   './',
   './index.html',
   './logo-atalat.png',
-  './manifest.json'
+  './manifest.json',
+  './supabase.js'
 ];
 
 self.addEventListener('install', (event) => {

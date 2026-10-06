@@ -357,6 +357,19 @@
   .tl-body{flex:1;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
   .tl-date{font-size:11px;color:var(--muted);font-weight:600;}
   .tl-type{font-size:13px;font-weight:700;margin:2px 0 3px;}
+  .tl-prod{
+    font-size:12px;
+    font-weight:600;
+    color:var(--primary-dark);
+    margin:3px 0 5px;
+    display:inline-flex;
+    align-items:center;
+    gap:5px;
+    background:rgba(28,127,196,0.08);
+    padding:2px 8px;
+    border-radius:6px;
+    border:1px solid rgba(28,127,196,0.2);
+  }
   .tl-desc{font-size:12.5px;color:var(--text);line-height:1.5;}
   .tl-photos{display:flex;gap:6px;margin-top:8px;}
   .tl-photos img{width:52px;height:52px;object-fit:cover;border-radius:8px;border:1px solid var(--border);}
@@ -669,6 +682,11 @@
     background:#16202c;
     border:1px solid #263445;
   }
+  body.dark-theme .tl-prod{
+    color:#38bdf8;
+    background:rgba(56,189,248,0.12);
+    border-color:rgba(56,189,248,0.25);
+  }
   body.dark-theme .screen::before{
     filter:none;
     opacity:0.10;
@@ -761,6 +779,12 @@
     .tl-date, .tl-desc{
       color:#334155 !important;
     }
+    .tl-prod{
+      color:#0369a1 !important;
+      background:transparent !important;
+      border:none !important;
+      padding:0 !important;
+    }
   }
 </style>
 </head>
@@ -814,7 +838,15 @@ var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
 var sb = null;
 try {
   if (window.supabase && window.supabase.createClient) {
-    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storage: window.localStorage
+      }
+    });
+    window.sb = sb;
   }
 } catch(e) {
   console.warn("Aviso ao inicializar cliente Supabase:", e);
@@ -1104,6 +1136,25 @@ function fmtProdutorDisplay(p){
   var mat = p.matricula ? ("[" + esc(p.matricula) + "] ") : "";
   var prop = p.propriedade ? (" · " + esc(p.propriedade)) : "";
   return mat + esc(p.nome) + prop;
+}
+
+function fmtHistProdutorHtml(h, t){
+  if(!h) return "";
+  var p = h.produtor;
+  var display = "";
+  if(p && typeof p === "object" && p.nome){
+    display = fmtProdutorDisplay(p);
+  } else if(p && typeof p === "string"){
+    var s = p.trim();
+    if(s && s !== "-" && s !== "—" && s !== "--" && s.toLowerCase() !== "sem produtor" && s.toLowerCase() !== "null" && s.toLowerCase() !== "undefined"){
+      display = esc(s);
+    }
+  }
+  if(!display && h && (h.tipo === "Instalação" || (h.tipo === "Cadastro" && t && t.status === "em_operacao")) && t && t.produtor && t.produtor.nome){
+    display = fmtProdutorDisplay(t.produtor);
+  }
+  if(!display) return "";
+  return '<div class="tl-prod"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg><span>Produtor: <strong>'+display+'</strong></span></div>';
 }
 
 function fmtLatLng(lat, lng){
@@ -2918,7 +2969,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.44";
+  var CURRENT_VERSION = "v2.0.45";
   if(!isOnline()) return; // NUNCA limpar cache ou desregistrar SW quando estiver offline
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
@@ -2961,6 +3012,7 @@ app.forcarAtualizacaoApp = function(){
 };
 
 // ---------- AUTENTICACAO ----------
+var _bootingAuth = false;
 async function init(){
   try {
     initTheme();
@@ -2976,18 +3028,19 @@ async function init(){
     if(cache.profiles && cache.profiles.length) state.profiles = cache.profiles;
   }
 
-  // 2. Verifica sessão Supabase de forma segura
+  // 2. Verifica sessão Supabase persistida de forma segura
   var sess = null;
-  if(window.sb && sb.auth){
+  var client = sb || window.sb;
+  if(client && client.auth){
     try {
-      var sessRes = await sb.auth.getSession();
+      var sessRes = await client.auth.getSession();
       sess = sessRes && sessRes.data ? sessRes.data.session : null;
     } catch(e){
-      console.warn("Aviso ao buscar sessão Supabase (offline):", e);
+      console.warn("Aviso ao buscar sessão Supabase (offline/cache):", e);
     }
 
     try {
-      sb.auth.onAuthStateChange(function(event, session){
+      client.auth.onAuthStateChange(function(event, session){
         if(session) state.session = session;
         if(event === "SIGNED_IN"){
           bootAfterAuthChange();
@@ -3007,8 +3060,8 @@ async function init(){
     state.session = sess;
   }
 
-  // Se NÃO há sessão Supabase e estamos online, direciona para o Login
-  if(isOnline() && !state.session){
+  // Se NÃO há sessão Supabase, não temos usuário em cache e estamos online, vai para login
+  if(isOnline() && !state.session && !state.me){
     state.me = null;
     state.view = "login";
     state.loading = false;
@@ -3016,8 +3069,8 @@ async function init(){
     return;
   }
 
-  // Modo offline com cache prévio
-  if(!isOnline() && state.me){
+  // Modo offline ou transição com cache prévio
+  if(!isOnline() && state.me && !state.session){
     state.session = {
       user: {
         id: state.me.id,
@@ -3036,65 +3089,75 @@ async function init(){
 }
 
 async function bootAfterAuthChange(){
-  var cache = loadCacheFromDisk();
-  var temCache = false;
-  if(cache){
-    if(cache.me && !state.me) state.me = cache.me;
-    if(cache.unidades && cache.unidades.length) state.unidades = sanitizeUnidades(cache.unidades);
-    if(cache.tanks && cache.tanks.length){
-      state.tanks = cache.tanks;
-      temCache = true;
+  if(_bootingAuth) return;
+  _bootingAuth = true;
+  try {
+    var cache = loadCacheFromDisk();
+    var temCache = false;
+    if(cache){
+      if(cache.me && !state.me) state.me = cache.me;
+      if(cache.unidades && cache.unidades.length) state.unidades = sanitizeUnidades(cache.unidades);
+      if(cache.tanks && cache.tanks.length){
+        state.tanks = cache.tanks;
+        temCache = true;
+      }
+      if(cache.profiles && cache.profiles.length) state.profiles = cache.profiles;
     }
-    if(cache.profiles && cache.profiles.length) state.profiles = cache.profiles;
-  }
 
-  // Se não há sessão e estamos online, vai para o login
-  if(isOnline() && !state.session){
-    state.me = null;
-    unsubscribeRealtime();
-    state.view = "login";
+    // Se não há sessão e não temos usuário autenticado em cache e estamos online, vai para o login
+    if(isOnline() && !state.session && !state.me){
+      state.me = null;
+      unsubscribeRealtime();
+      state.view = "login";
+      state.loading = false;
+      render();
+      return;
+    }
+
+    // Se temos sessão Supabase ativa, define state.me e desenha o painel
+    if(state.session && state.session.user){
+      var sEmail = (state.session.user.email || "").toLowerCase().trim();
+      var sMeta = state.session.user.user_metadata || {};
+      var sName = sMeta.nome || sEmail.split("@")[0] || "Usuário";
+      var sPapel = (sEmail.indexOf("nelint") !== -1 || sEmail.indexOf("filialnaque") !== -1 || sEmail.indexOf("italo") !== -1 || sEmail.indexOf("pauloip") !== -1) ? "admin" : "admin";
+      state.me = {
+        id: state.session.user.id,
+        nome: sName,
+        usuario: sEmail,
+        papel: sPapel,
+        unidade_id: "9adeb73d-b1f4-4d0c-87e5-a6138758900b"
+      };
+      state.view = "painel";
+      state.loading = false;
+      render();
+    } else if(state.me){
+      state.view = "painel";
+      state.loading = false;
+      render();
+    }
+
+    // Se estiver online, carrega todos os 161 tanques autenticados da nuvem
+    if(isOnline() && (state.session || state.me)){
+      try{
+        await loadMe();
+        await loadUnidades();
+        await loadTanques();
+        saveCache();
+        subscribeRealtime();
+        processarFila();
+      }catch(e){
+        console.warn("Aviso ao atualizar dados da nuvem:", e);
+      }
+      render();
+    } else if(temCache){
+      app.toast("📶 Modo offline — dados locais disponíveis.");
+    }
+
     state.loading = false;
     render();
-    return;
+  } finally {
+    _bootingAuth = false;
   }
-
-  // Se temos sessão Supabase ativa, define state.me e desenha o painel
-  if(state.session && state.session.user){
-    var sEmail = (state.session.user.email || "").toLowerCase().trim();
-    var sMeta = state.session.user.user_metadata || {};
-    var sName = sMeta.nome || sEmail.split("@")[0] || "Usuário";
-    var sPapel = (sEmail.indexOf("nelint") !== -1 || sEmail.indexOf("filialnaque") !== -1 || sEmail.indexOf("italo") !== -1 || sEmail.indexOf("pauloip") !== -1) ? "admin" : "admin";
-    state.me = {
-      id: state.session.user.id,
-      nome: sName,
-      usuario: sEmail,
-      papel: sPapel,
-      unidade_id: "9adeb73d-b1f4-4d0c-87e5-a6138758900b"
-    };
-    state.view = "painel";
-    state.loading = false;
-    render();
-  }
-
-  // Se estiver online, carrega todos os 161 tanques autenticados da nuvem
-  if(isOnline() && state.session){
-    try{
-      await loadMe();
-      await loadUnidades();
-      await loadTanques();
-      saveCache();
-      subscribeRealtime();
-      processarFila();
-    }catch(e){
-      console.warn("Aviso ao atualizar dados da nuvem:", e);
-    }
-    render();
-  } else if(temCache){
-    app.toast("📶 Modo offline — dados locais disponíveis.");
-  }
-
-  state.loading = false;
-  render();
 }
 
 var _lastOnlineSyncTime = 0;
@@ -3168,6 +3231,9 @@ app.entrar = async function(){
 
   if(!res.error && res.data && res.data.session){
     state.session = res.data.session;
+    try {
+      localStorage.setItem("atalat_last_user", email);
+    } catch(e){}
     app.toast("🎉 Login efetuado com sucesso!");
     await bootAfterAuthChange();
     app.hideLoading();
@@ -3217,6 +3283,9 @@ app.criarConta = async function(){
 
   if(res.data && res.data.session){
     state.session = res.data.session;
+    try {
+      localStorage.setItem("atalat_last_user", email);
+    } catch(e){}
     app.toast("🎉 Conta criada com sucesso!");
     await bootAfterAuthChange();
     app.hideLoading();
@@ -3233,7 +3302,8 @@ app.criarConta = async function(){
 app.sair = async function(){
   try {
     localStorage.removeItem(CACHE_KEY);
-    if(window.sb && sb.auth) await sb.auth.signOut();
+    var client = sb || window.sb;
+    if(client && client.auth) await client.auth.signOut();
   } catch(e){}
   state.session = null;
   state.me = null;
@@ -3255,13 +3325,18 @@ function renderLogin(){
   document.getElementById("topbarRight").innerHTML = "";
   document.getElementById("navbar").style.display = "none";
 
+  var lastUser = "";
+  try { lastUser = (localStorage.getItem("atalat_last_user") || "").replace(/"/g, '&quot;'); } catch(e){}
+
   var html = '<div class="auth-wrap">';
   html += '<div class="auth-title">Entrar</div>';
   html += '<div class="auth-sub">Acesse com seu usuário e senha</div>';
-  html += '<div class="field"><label>Usuário</label><input id="a_email" type="text" placeholder="Seu usuário"/></div>';
-  html += '<div class="field"><label>Senha</label><div class="password-input-wrap"><input id="a_senha" type="password" placeholder="••••••••"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'a_senha\', this)">👁️</button></div></div>';
+  html += '<form id="form_login" onsubmit="event.preventDefault(); app.entrar(); return false;" autocomplete="on">';
+  html += '<div class="field"><label for="a_email">Usuário</label><input id="a_email" name="username" type="text" autocomplete="username" placeholder="Seu usuário" value="' + lastUser + '" required /></div>';
+  html += '<div class="field"><label for="a_senha">Senha</label><div class="password-input-wrap"><input id="a_senha" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required /><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'a_senha\', this)">👁️</button></div></div>';
   html += '<div style="text-align:right;margin-top:-6px;margin-bottom:12px;"><button type="button" class="btn-link" style="font-size:12px;" onclick="app.trocarAuthMode(\'forgot\')">Esqueci minha senha</button></div>';
-  html += '<button class="btn btn-primary" style="margin-top:4px;" onclick="app.entrar()">Entrar</button>';
+  html += '<button type="submit" class="btn btn-primary" style="margin-top:4px;">Entrar</button>';
+  html += '</form>';
   html += '<div class="auth-switch">Ainda não tem conta? <button class="btn-link" onclick="app.trocarAuthMode(\'signup\')">Criar conta</button></div>';
   html += '</div>';
 
@@ -3289,7 +3364,8 @@ app.enviarLinkRecuperacao = async function(){
   if(!email){ markInvalid("a_reset_email", "Informe o e-mail."); return; }
   
   app.toast("Enviando e-mail de recuperação...");
-  var res = await sb.auth.resetPasswordForEmail(email, {
+  var client = sb || window.sb;
+  var res = await client.auth.resetPasswordForEmail(email, {
     redirectTo: window.location.href
   });
 
@@ -3312,10 +3388,12 @@ function renderSignup(){
   var html = '<div class="auth-wrap">';
   html += '<div class="auth-title">Criar conta</div>';
   html += '<div class="auth-sub">Sua conta será criada imediatamente com acesso de visualização e edição. O administrador pode gerenciar permissões e unidades em Configurações.</div>';
-  html += '<div class="field"><label>Nome completo</label><input id="a_nome" placeholder="Seu nome"/></div>';
-  html += '<div class="field"><label>Usuário</label><input id="a_email2" type="text" placeholder="Seu usuário"/></div>';
-  html += '<div class="field"><label>Senha</label><div class="password-input-wrap"><input id="a_senha2" type="password" placeholder="mínimo 6 caracteres"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'a_senha2\', this)">👁️</button></div></div>';
-  html += '<button class="btn btn-primary" style="margin-top:14px;" onclick="app.criarConta()">Criar conta</button>';
+  html += '<form id="form_signup" onsubmit="event.preventDefault(); app.criarConta(); return false;" autocomplete="on">';
+  html += '<div class="field"><label for="a_nome">Nome completo</label><input id="a_nome" name="name" type="text" autocomplete="name" placeholder="Seu nome" required /></div>';
+  html += '<div class="field"><label for="a_email2">Usuário</label><input id="a_email2" name="username" type="text" autocomplete="username" placeholder="Seu usuário" required /></div>';
+  html += '<div class="field"><label for="a_senha2">Senha</label><div class="password-input-wrap"><input id="a_senha2" name="new-password" type="password" autocomplete="new-password" placeholder="mínimo 6 caracteres" required /><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'a_senha2\', this)">👁️</button></div></div>';
+  html += '<button type="submit" class="btn btn-primary" style="margin-top:14px;">Criar conta</button>';
+  html += '</form>';
   html += '<div class="auth-switch">Já tem conta? <button class="btn-link" onclick="app.trocarAuthMode(\'login\')">Entrar</button></div>';
   html += '</div>';
 
@@ -3338,9 +3416,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.44</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.45</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.44</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.45</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -3596,6 +3674,7 @@ function renderDetalhe(){
           '<div class="tl-type">'+esc(h.tipo)+pendingTagHtml(h.pendente)+'</div></div>'+
           (tlActions ? '<div class="tl-actions no-print">'+tlActions+'</div>' : '')+
         '</div>'+
+        fmtHistProdutorHtml(h, t)+
         '<div class="tl-desc">'+esc(h.desc)+'</div>';
       var validHFotos = (h.fotos || []).filter(function(f){
         return f && typeof f === "string" && f.trim().length > 0 && f.indexOf("logo-atalat") === -1;
@@ -4499,7 +4578,13 @@ function renderEditarRegistro(){
       return '<option '+(editRegForm.tipo===o?'selected':'')+'>'+o+'</option>';
     }).join('')+'</select></div>';
   html += '<div class="field"><label>Data</label><input id="r_data" type="date" value="'+editRegForm.data+'"/></div>';
-  html += '<div class="field"><label>Produtor</label><input id="r_produtor" value="'+esc(editRegForm.produtor==="—"?"":editRegForm.produtor)+'"/></div>';
+  var rProdVal = "";
+  if(editRegForm.produtor && typeof editRegForm.produtor === "object") rProdVal = editRegForm.produtor.nome || "";
+  else if(typeof editRegForm.produtor === "string") {
+    var sp = editRegForm.produtor.trim();
+    if(sp !== "—" && sp !== "-") rProdVal = sp;
+  }
+  html += '<div class="field"><label>Produtor</label><input id="r_produtor" value="'+esc(rProdVal)+'" placeholder="Nome do produtor (opcional)"/></div>';
   html += '<div class="field"><label>Observações</label><textarea id="r_desc">'+esc(editRegForm.desc)+'</textarea></div>';
 
   html += '<div class="row-btns" style="margin-top:18px;">'+
@@ -4776,7 +4861,8 @@ function renderRelatorio(){
     hist.forEach(function(h){
       html += '<div class="tl-item"><div class="tl-dot"></div><div class="tl-body">'+
         '<div class="tl-date">'+fmtDateHora(h)+'</div>'+
-        '<div class="tl-type">'+esc(h.tipo)+' — produtor: '+esc(h.produtor)+'</div>'+
+        '<div class="tl-type">'+esc(h.tipo)+'</div>'+
+        fmtHistProdutorHtml(h, t)+
         '<div class="tl-desc">'+esc(h.desc)+'</div>';
       if(h.fotos && h.fotos.length){
         html += '<div class="tl-photos">'+h.fotos.map(function(f){return '<img src="'+f+'" onclick="app.openPhotoModal(\''+f+'\')" style="cursor:pointer;" title="Clique para ampliar e baixar"/>';}).join('')+'</div>';
@@ -4841,7 +4927,7 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.44</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.45</div>'+
     '<div class="note" style="margin-top:4px;">Atualizado em 25/09/2026 (Sincronização autenticada dos 161 tanques da nuvem).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
