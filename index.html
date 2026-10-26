@@ -1542,6 +1542,19 @@ function normalizeUserKey(str){
   return clean.replace(/@.*$/, "");
 }
 
+function resolveFullEmail(str){
+  if(!str) return "";
+  var clean = String(str).toLowerCase().trim();
+  if(clean.indexOf("@") !== -1) return clean;
+  if(clean.indexOf("italo") !== -1 || clean.indexOf("pauloip") !== -1){
+    return "italo.pauloip01@gmail.com";
+  } else if(clean.indexOf("nelint") !== -1 || clean.indexOf("filialnaque") !== -1 || clean === "naque"){
+    return "atalat.filialnaque@gmail.com";
+  } else {
+    return clean + "@gmail.com";
+  }
+}
+
 function getDirectPasswords(){
   var localPasses = {};
   try{
@@ -2969,7 +2982,7 @@ function initTheme(){
 }
 
 function autoCheckAppUpdate(){
-  var CURRENT_VERSION = "v2.0.45";
+  var CURRENT_VERSION = "v2.0.46";
   if(!isOnline()) return; // NUNCA limpar cache ou desregistrar SW quando estiver offline
   var lastVer = localStorage.getItem("atalat_app_version");
   if(lastVer !== CURRENT_VERSION){
@@ -3042,6 +3055,12 @@ async function init(){
     try {
       client.auth.onAuthStateChange(function(event, session){
         if(session) state.session = session;
+        if(event === "PASSWORD_RECOVERY"){
+          state.view = "resetPassword";
+          state.loading = false;
+          render();
+          return;
+        }
         if(event === "SIGNED_IN"){
           bootAfterAuthChange();
         } else if(event === "SIGNED_OUT"){
@@ -3054,6 +3073,13 @@ async function init(){
         }
       });
     } catch(e){}
+  }
+
+  if(window.location.hash && (window.location.hash.indexOf("type=recovery") !== -1 || (window.location.hash.indexOf("access_token=") !== -1 && window.location.hash.indexOf("recovery") !== -1))){
+    state.view = "resetPassword";
+    state.loading = false;
+    render();
+    return;
   }
 
   if(sess){
@@ -3210,16 +3236,7 @@ app.entrar = async function(){
 
   app.showLoading("Entrando...");
 
-  var fullEmail = email;
-  if(fullEmail.indexOf("@") === -1){
-    if(fullEmail.indexOf("italo") !== -1 || fullEmail.indexOf("pauloip") !== -1){
-      fullEmail = "italo.pauloip01@gmail.com";
-    } else if(fullEmail.indexOf("nelint") !== -1 || fullEmail.indexOf("filialnaque") !== -1 || fullEmail === "naque"){
-      fullEmail = "atalat.filialnaque@gmail.com";
-    } else {
-      fullEmail = fullEmail + "@gmail.com";
-    }
-  }
+  var fullEmail = resolveFullEmail(email);
   var res;
   try {
     res = await sb.auth.signInWithPassword({email: fullEmail, password: senha});
@@ -3263,10 +3280,11 @@ app.criarConta = async function(){
 
   app.showLoading("Criando conta...");
 
+  var fullEmail = resolveFullEmail(email);
   var res;
   try{
     res = await sb.auth.signUp({
-      email: email, password: senha,
+      email: fullEmail, password: senha,
       options: {data: {nome: nome, usuario: email, papel: "operador"}}
     });
   }catch(e){
@@ -3351,8 +3369,13 @@ function renderForgotPassword(){
 
   var html = '<div class="auth-wrap">';
   html += '<div class="auth-title">Esqueceu a senha?</div>';
-  html += '<div class="auth-sub" style="line-height:1.5;">Para redefinir sua senha, entre em contato com o administrador do sistema para que ele possa redefini-la no menu Configurações.</div>';
-  html += '<button class="btn btn-primary" style="margin-top:16px;" onclick="app.trocarAuthMode(\'login\')">Voltar ao Entrar</button>';
+  html += '<div class="auth-sub">Digite seu usuário ou e-mail. Enviaremos um link para você redefinir sua senha com segurança.</div>';
+  html += '<form id="form_forgot" onsubmit="event.preventDefault(); app.enviarLinkRecuperacao(); return false;" autocomplete="on">';
+  html += '<div class="field"><label for="a_reset_email">Usuário ou E-mail</label><input id="a_reset_email" name="username" type="text" autocomplete="username" placeholder="Seu usuário ou e-mail" required /></div>';
+  html += '<button type="submit" class="btn btn-primary" style="margin-top:14px;">📧 Enviar Link de Recuperação</button>';
+  html += '</form>';
+  html += '<div class="auth-switch"><button type="button" class="btn-link" onclick="app.trocarAuthMode(\'login\')">← Voltar para o Login</button></div>';
+  html += '<div style="margin-top:20px;padding:12px;background:var(--gray-bg);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted);line-height:1.4;text-align:left;">💡 <strong>Dica:</strong> Se você estiver sem acesso ao seu e-mail, o <strong>administrador</strong> pode redefinir sua senha diretamente no menu Configurações do app.</div>';
   html += '</div>';
 
   document.getElementById("screen").innerHTML = html;
@@ -3360,22 +3383,73 @@ function renderForgotPassword(){
 
 app.enviarLinkRecuperacao = async function(){
   clearInvalid();
-  var email = (document.getElementById("a_reset_email").value || "").trim().toLowerCase();
-  if(!email){ markInvalid("a_reset_email", "Informe o e-mail."); return; }
+  var raw = (document.getElementById("a_reset_email").value || "").trim().toLowerCase();
+  if(!raw){ markInvalid("a_reset_email", "Informe o usuário ou e-mail."); return; }
   
-  app.toast("Enviando e-mail de recuperação...");
+  var email = resolveFullEmail(raw);
+  app.showLoading("Enviando e-mail de recuperação...");
   var client = sb || window.sb;
+  var redirectUrl = window.location.origin + window.location.pathname;
   var res = await client.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.href
+    redirectTo: redirectUrl
   });
+  app.hideLoading();
 
   if(res.error){
-    app.toast("Não foi possível enviar o e-mail: " + res.error.message);
+    var msg = res.error.message || "";
+    if(msg.toLowerCase().indexOf("rate limit") !== -1){
+      app.toast("⚠️ Limite de envio atingido. Aguarde alguns minutos antes de tentar novamente.");
+    } else {
+      app.toast("Não foi possível enviar o e-mail: " + msg);
+    }
   } else {
-    app.toast("Enviamos um e-mail para " + email + ". Verifique sua caixa de entrada e spam!");
+    app.toast("✅ Enviamos o link de recuperação para " + email + ". Verifique sua caixa de entrada e spam!");
     state.authMode = "login";
     state.view = "login";
     render();
+  }
+};
+
+function renderResetPassword(){
+  document.getElementById("topTitle").textContent = "ControleTanque";
+  document.getElementById("topSub").textContent = "Redefinição de senha";
+  document.getElementById("topbarRight").innerHTML = "";
+  document.getElementById("navbar").style.display = "none";
+
+  var html = '<div class="auth-wrap">';
+  html += '<div class="auth-title">Nova Senha</div>';
+  html += '<div class="auth-sub">Digite sua nova senha para recuperar o acesso à sua conta.</div>';
+  html += '<form id="form_reset" onsubmit="event.preventDefault(); app.salvarNovaSenhaRecuperada(); return false;">';
+  html += '<div class="field"><label for="recup_nova_senha">Nova senha</label><div class="password-input-wrap"><input id="recup_nova_senha" type="password" autocomplete="new-password" placeholder="mínimo 6 caracteres" required /><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'recup_nova_senha\', this)">👁️</button></div></div>';
+  html += '<div class="field"><label for="recup_conf_senha">Confirmar nova senha</label><div class="password-input-wrap"><input id="recup_conf_senha" type="password" autocomplete="new-password" placeholder="repita a nova senha" required /><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'recup_conf_senha\', this)">👁️</button></div></div>';
+  html += '<button type="submit" class="btn btn-primary" style="margin-top:14px;">Salvar Nova Senha e Entrar</button>';
+  html += '</form>';
+  html += '<div class="auth-switch"><button type="button" class="btn-link" onclick="app.trocarAuthMode(\'login\')">Cancelar</button></div>';
+  html += '</div>';
+
+  document.getElementById("screen").innerHTML = html;
+}
+
+app.salvarNovaSenhaRecuperada = async function(){
+  clearInvalid();
+  var ns = (document.getElementById("recup_nova_senha").value || "").trim();
+  var cs = (document.getElementById("recup_conf_senha").value || "").trim();
+  if(!ns || ns.length < 6){ markInvalid("recup_nova_senha", "A nova senha deve ter ao menos 6 caracteres."); return; }
+  if(ns !== cs){ markInvalid("recup_conf_senha", "As senhas não coincidem."); return; }
+
+  app.showLoading("Atualizando sua senha...");
+  var client = sb || window.sb;
+  var res = await client.auth.updateUser({ password: ns });
+  app.hideLoading();
+
+  if(res.error){
+    app.toast("⚠️ Erro ao atualizar senha: " + res.error.message);
+  } else {
+    try {
+      history.replaceState(null, "", window.location.pathname);
+    } catch(e){}
+    app.toast("🎉 Senha alterada com sucesso! Bem-vindo.");
+    await bootAfterAuthChange();
   }
 };
 
@@ -3416,9 +3490,9 @@ function renderTopbarUser(){
   var syncIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 
   if(pend > 0){
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.45</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.46</span><button class="btn btn-primary" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Enviar ('+pend+')</button>';
   } else {
-    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.45</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
+    document.getElementById("topbarRight").innerHTML = '<span style="font-size:10px;opacity:0.85;margin-right:6px;">v2.0.46</span><button class="btn btn-ghost" style="padding:5px 9px;font-size:11.5px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="app.sincronizarEReceberDados()">'+syncIcon+'Sincronizar</button>';
   }
 }
 
@@ -4904,6 +4978,15 @@ function renderConfig(){
     '</div>'+
   '</div>';
 
+  // 1.1 CARD DE ALTERAÇÃO DA PRÓPRIA SENHA
+  html += '<div class="section-title">Minha Senha</div>'+
+    '<div class="filter-card" style="margin-bottom:18px;padding:16px;">'+
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Deseja trocar sua senha atual? Digite a nova senha abaixo.</div>'+
+      '<div class="field" style="margin-top:0;"><label>Nova senha</label><div class="password-input-wrap"><input id="c_novasenha" type="password" placeholder="Mínimo 6 caracteres"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'c_novasenha\', this)">👁️</button></div></div>'+
+      '<div class="field"><label>Confirmar nova senha</label><div class="password-input-wrap"><input id="c_confsenha" type="password" placeholder="Confirme a nova senha"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'c_confsenha\', this)">👁️</button></div></div>'+
+      '<button class="btn btn-primary" style="margin-top:12px;padding:8px 14px;font-size:12.5px;" onclick="app.alterarMinhaSenha()">🔒 Alterar Minha Senha</button>'+
+    '</div>';
+
   // 2. CARD DE SINCRONIZAÇÃO E MANUTENÇÃO
   html += '<div class="banner-info no-print" style="margin-bottom:14px;padding:14px;background:rgba(2,132,199,0.12);border:1px solid rgba(2,132,199,0.3);border-radius:10px;">'+
     '<div style="font-weight:700;font-size:14px;color:#0284c7;margin-bottom:4px;">🚜 Preparar Aparelho para Ir ao Campo (Modo 100% Offline)</div>'+
@@ -4927,8 +5010,8 @@ function renderConfig(){
   html += '<div class="section-title">Versão do Aplicativo</div>';
   html += '<div class="current-user-card" style="margin-bottom:18px;">'+
     '<div class="l">Versão Instalada</div>'+
-    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.45</div>'+
-    '<div class="note" style="margin-top:4px;">Atualizado em 25/09/2026 (Sincronização autenticada dos 161 tanques da nuvem).</div>'+
+    '<div class="v" style="font-size:14px;margin-top:4px;">Atalat ControleTanque v2.0.46</div>'+
+    '<div class="note" style="margin-top:4px;">Atualizado em 26/10/2026 (Correção completa da recuperação e redefinição de senhas).</div>'+
     '<button class="btn btn-ghost" style="margin-top:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.forcarAtualizacaoApp()">🔄 Limpar Cache &amp; Forçar Atualização</button>'+
   '</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
@@ -4947,9 +5030,13 @@ function renderConfig(){
       return '<option value="'+p.id+'">'+esc(p.nome)+' ('+esc(p.usuario||'')+')</option>';
     }).join('');
     html += '<div class="filter-card" style="margin-bottom:18px;padding:16px;">'+
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Como administrador, você pode definir uma nova senha diretamente para qualquer usuário. Ele poderá entrar imediatamente com essa nova senha.</div>'+
       '<div class="field" style="margin-top:0;"><label>Selecione o usuário</label><select id="adm_user_select">'+uOptions+'</select></div>'+
       '<div class="field"><label>Nova senha</label><div class="password-input-wrap"><input id="adm_nova_senha" type="password" placeholder="Digite a nova senha para o usuário"/><button type="button" class="password-toggle-btn" title="Mostrar/ocultar senha" onclick="app.togglePasswordVisibility(\'adm_nova_senha\', this)">👁️</button></div></div>'+
-      '<button class="btn btn-primary" style="margin-top:12px;padding:8px 14px;font-size:12.5px;" onclick="app.definirSenhaUsuario()">🔑 Redefinir Senha do Usuário</button>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'+
+        '<button class="btn btn-primary" style="padding:8px 14px;font-size:12.5px;" onclick="app.definirSenhaUsuario()">🔑 Redefinir Senha do Usuário</button>'+
+        '<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px;background:var(--gray-bg);color:var(--text);border:1px solid var(--border);" onclick="app.mostrarScriptSqlSupabase()">📋 Script SQL Supabase</button>'+
+      '</div>'+
     '</div>';
   }
 
@@ -4985,10 +5072,140 @@ function renderConfig(){
   document.getElementById("screen").innerHTML = html;
 }
 
+var SQL_ADMIN_RESET_SCRIPT = `-- 1. Habilita a extensão pgcrypto para criptografia bcrypt
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- 2. Cria a função RPC para o Administrador alterar a senha de qualquer usuário
+CREATE OR REPLACE FUNCTION public.admin_reset_password(target_user_id text, new_password text)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+  caller_role text;
+  affected_rows int := 0;
+  clean_id uuid;
+BEGIN
+  -- Confere se o chamador é administrador
+  SELECT papel INTO caller_role FROM public.profiles WHERE id = auth.uid();
+  IF caller_role IS NULL THEN
+    SELECT papel INTO caller_role FROM public.profiles WHERE LOWER(TRIM(usuario)) = LOWER(TRIM(auth.jwt() ->> 'email'));
+  END IF;
+
+  IF caller_role IS DISTINCT FROM 'admin' THEN
+    RETURN json_build_object('success', false, 'error', 'Permissão negada. Apenas administradores podem redefinir senhas.');
+  END IF;
+
+  IF LENGTH(TRIM(new_password)) < 6 THEN
+    RETURN json_build_object('success', false, 'error', 'A nova senha deve ter no mínimo 6 caracteres.');
+  END IF;
+
+  -- Tenta converter target_user_id para UUID
+  BEGIN
+    clean_id := target_user_id::uuid;
+  EXCEPTION WHEN OTHERS THEN
+    clean_id := null;
+  END;
+
+  IF clean_id IS NOT NULL THEN
+    UPDATE auth.users
+    SET encrypted_password = crypt(new_password, gen_salt('bf')),
+        updated_at = now()
+    WHERE id = clean_id;
+    GET DIAGNOSTICS affected_rows = ROW_COUNT;
+  END IF;
+
+  IF affected_rows = 0 THEN
+    UPDATE auth.users
+    SET encrypted_password = crypt(new_password, gen_salt('bf')),
+        updated_at = now()
+    WHERE LOWER(TRIM(email)) = LOWER(TRIM(target_user_id));
+    GET DIAGNOSTICS affected_rows = ROW_COUNT;
+  END IF;
+
+  IF affected_rows = 0 THEN
+    SELECT id::uuid INTO clean_id FROM public.profiles 
+    WHERE LOWER(TRIM(usuario)) = LOWER(TRIM(target_user_id))
+       OR id::text = target_user_id
+    LIMIT 1;
+
+    IF clean_id IS NOT NULL THEN
+      UPDATE auth.users
+      SET encrypted_password = crypt(new_password, gen_salt('bf')),
+          updated_at = now()
+      WHERE id = clean_id;
+      GET DIAGNOSTICS affected_rows = ROW_COUNT;
+    END IF;
+  END IF;
+
+  IF affected_rows = 0 THEN
+    RETURN json_build_object('success', false, 'error', 'Usuário não foi encontrado na base de autenticação do Supabase.');
+  END IF;
+
+  RETURN json_build_object('success', true);
+END;
+$$;
+
+-- 3. Concede permissão de execução aos usuários autenticados
+GRANT EXECUTE ON FUNCTION public.admin_reset_password(text, text) TO authenticated;`;
+
+app.mostrarScriptSqlSupabase = function(){
+  var modalEl = document.getElementById("sqlModalWrap");
+  if(modalEl) modalEl.remove();
+
+  var div = document.createElement("div");
+  div.id = "sqlModalWrap";
+  div.className = "photo-modal-wrap";
+  div.style.zIndex = "10000";
+  div.innerHTML = '<div class="filter-card" style="max-width:540px;width:92%;max-height:85vh;overflow-y:auto;background:var(--card);padding:20px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.3);position:relative;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'+
+      '<div style="font-weight:700;font-size:16px;">🔑 Script SQL do Supabase</div>'+
+      '<button class="btn btn-ghost" style="padding:4px 8px;font-size:16px;" onclick="document.getElementById(\'sqlModalWrap\').remove()">✕</button>'+
+    '</div>'+
+    '<div style="font-size:12.5px;color:var(--text);line-height:1.5;margin-bottom:12px;">'+
+      'Para que o Administrador consiga alterar a senha de qualquer usuário <strong>diretamente no app sem precisar de e-mail</strong>, execute o script SQL abaixo <strong>uma única vez</strong> no painel do seu Supabase:'+
+      '<ol style="margin:8px 0 12px 18px;padding:0;">'+
+        '<li>Acesse o painel do seu Supabase (<strong>SQL Editor</strong>).</li>'+
+        '<li>Clique em <strong>New Query</strong> e cole o código abaixo.</li>'+
+        '<li>Clique no botão <strong>Run</strong> (Executar).</li>'+
+      '</ol>'+
+    '</div>'+
+    '<textarea id="txt_sql_script" readonly style="width:100%;height:160px;font-family:monospace;font-size:11.5px;padding:10px;background:var(--gray-bg);border:1px solid var(--border);border-radius:6px;resize:vertical;color:var(--text);">'+SQL_ADMIN_RESET_SCRIPT+'</textarea>'+
+    '<div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap;">'+
+      '<button class="btn btn-primary" onclick="app.copiarScriptSqlSupabase()">📋 Copiar Script SQL</button>'+
+      '<button class="btn btn-ghost" onclick="document.getElementById(\'sqlModalWrap\').remove()">Fechar</button>'+
+    '</div>'+
+  '</div>';
+
+  document.body.appendChild(div);
+};
+
+app.copiarScriptSqlSupabase = function(){
+  try {
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(SQL_ADMIN_RESET_SCRIPT);
+    } else {
+      var txt = document.getElementById("txt_sql_script");
+      if(txt){ txt.select(); document.execCommand("copy"); }
+    }
+    app.toast("📋 Script SQL copiado com sucesso!");
+  } catch(e){
+    app.toast("Copie o texto manualmente pelo campo.");
+  }
+};
+
+app.mostrarModalSqlAviso = function(userName, novaSenha){
+  app.mostrarScriptSqlSupabase();
+  setTimeout(function(){
+    app.toast("⚠️ Execute o script SQL no Supabase para ativar a redefinição direta!");
+  }, 300);
+};
+
 app.definirSenhaUsuario = async function(){
   clearInvalid();
   var userId = document.getElementById("adm_user_select").value;
-  var novaSenha = document.getElementById("adm_nova_senha").value;
+  var novaSenha = (document.getElementById("adm_nova_senha").value || "").trim();
   if(!userId){ markInvalid("adm_user_select", "Selecione o usuário."); return; }
   if(!novaSenha || novaSenha.length < 6){ markInvalid("adm_nova_senha", "A senha deve ter ao menos 6 caracteres."); return; }
 
@@ -4996,26 +5213,73 @@ app.definirSenhaUsuario = async function(){
   if(!u){ app.toast("Usuário não encontrado."); return; }
 
   var email = (u.usuario || u.email || "").toLowerCase().trim();
-  setDirectPassword(email, novaSenha);
-  try{ await sb.auth.resetPasswordForEmail(email); }catch(e){}
+  var targetId = u.id || email;
 
-  app.toast("✅ Senha de "+(u.nome||u.usuario)+" alterada com sucesso para '"+novaSenha+"'! Ele já pode entrar direto com a nova senha.");
-  document.getElementById("adm_nova_senha").value = "";
+  app.showLoading("Redefinindo senha no Supabase...");
+
+  // Se o próprio administrador está trocando sua senha
+  if(u.id === state.me.id || email === (state.me.usuario||"").toLowerCase().trim()){
+    var resSelf = await sb.auth.updateUser({ password: novaSenha });
+    app.hideLoading();
+    if(resSelf.error){
+      app.toast("⚠️ Erro ao alterar senha: " + resSelf.error.message);
+    } else {
+      app.toast("🎉 Sua senha foi alterada com sucesso!");
+      document.getElementById("adm_nova_senha").value = "";
+    }
+    return;
+  }
+
+  // Tenta alterar a senha no Supabase Auth via RPC admin_reset_password
+  var rpcRes = null;
+  try {
+    rpcRes = await sb.rpc("admin_reset_password", {
+      target_user_id: targetId,
+      new_password: novaSenha
+    });
+  } catch(e){
+    rpcRes = { error: e };
+  }
+
+  app.hideLoading();
+
+  if(rpcRes && !rpcRes.error && rpcRes.data && rpcRes.data.success){
+    app.toast("✅ Senha de " + (u.nome || u.usuario) + " alterada com sucesso no Supabase! Ele já pode entrar com ela.");
+    document.getElementById("adm_nova_senha").value = "";
+    return;
+  }
+
+  // Verifica se a função RPC não está instalada no Supabase
+  var isRpcMissing = rpcRes && (
+    (rpcRes.error && (rpcRes.error.code === "PGRST202" || (rpcRes.error.message && rpcRes.error.message.indexOf("Could not find the function") !== -1))) ||
+    (rpcRes.data && rpcRes.data.error && rpcRes.data.error.indexOf("Could not find the function") !== -1)
+  );
+
+  if(isRpcMissing){
+    try { await sb.auth.resetPasswordForEmail(email); }catch(e){}
+    app.mostrarModalSqlAviso(u.nome || u.usuario, novaSenha);
+    return;
+  }
+
+  var msg = (rpcRes && rpcRes.data && rpcRes.data.error) || (rpcRes && rpcRes.error && rpcRes.error.message) || "Erro ao redefinir senha no Supabase.";
+  app.toast("⚠️ " + msg);
 };
 
 app.alterarMinhaSenha = async function(){
   clearInvalid();
-  var ns = document.getElementById("c_novasenha").value;
-  var cs = document.getElementById("c_confsenha").value;
+  var ns = (document.getElementById("c_novasenha").value || "").trim();
+  var cs = (document.getElementById("c_confsenha").value || "").trim();
   if(!ns || ns.length < 6){ markInvalid("c_novasenha", "A nova senha deve ter ao menos 6 caracteres."); return; }
   if(ns !== cs){ markInvalid("c_confsenha", "As senhas não coincidem."); return; }
 
-  app.toast("Alterando senha...");
+  app.showLoading("Alterando sua senha...");
   var res = await sb.auth.updateUser({ password: ns });
+  app.hideLoading();
+
   if(res.error){
-    app.toast("Erro ao alterar senha: " + res.error.message);
+    app.toast("⚠️ Erro ao alterar senha: " + res.error.message);
   } else {
-    app.toast("Sua senha foi alterada com sucesso!");
+    app.toast("🎉 Sua senha foi alterada com sucesso!");
     document.getElementById("c_novasenha").value = "";
     document.getElementById("c_confsenha").value = "";
   }
@@ -5100,7 +5364,28 @@ app.salvarUsuario = async function(){
     } else {
       var targetUser = findProfile(userForm.id);
       var targetEmail = (targetUser ? targetUser.usuario : "") || userForm.nome;
-      await sb.auth.resetPasswordForEmail(targetEmail);
+      var targetId = (targetUser && targetUser.id) ? targetUser.id : targetEmail;
+      var rpcSalvar = null;
+      try {
+        rpcSalvar = await sb.rpc("admin_reset_password", {
+          target_user_id: targetId,
+          new_password: novaSenha
+        });
+      } catch(e){
+        rpcSalvar = { error: e };
+      }
+
+      if(rpcSalvar && !rpcSalvar.error && rpcSalvar.data && rpcSalvar.data.success){
+        app.toast("✅ Senha do usuário alterada com sucesso no Supabase!");
+      } else {
+        var isMissing = rpcSalvar && rpcSalvar.error && (rpcSalvar.error.code === "PGRST202" || (rpcSalvar.error.message && rpcSalvar.error.message.indexOf("Could not find the function") !== -1));
+        if(isMissing){
+          try{ await sb.auth.resetPasswordForEmail(targetEmail); }catch(e){}
+          app.mostrarModalSqlAviso(targetUser ? targetUser.nome : targetEmail, novaSenha);
+        } else {
+          app.toast("⚠️ Aviso ao atualizar senha: " + ((rpcSalvar && rpcSalvar.data && rpcSalvar.data.error) || (rpcSalvar && rpcSalvar.error && rpcSalvar.error.message) || "falha no Supabase"));
+        }
+      }
     }
   }
 
@@ -5315,6 +5600,7 @@ function render(){
   else if(state.view==="login") renderLogin();
   else if(state.view==="signup") renderSignup();
   else if(state.view==="forgot") renderForgotPassword();
+  else if(state.view==="resetPassword") renderResetPassword();
   else if(!state.me){ renderCarregando(); }
   else if(state.view==="painel") renderPainel();
   else if(state.view==="nova") renderNova();
